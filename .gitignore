@@ -8,3 +8,20 @@ temp
 image_temp
 tools/pypcd
 temp*/
+
+# --- локальные файлы лаборатории, в репозиторий не попадают ---
+venv/
+.venv/
+backup/
+server.log
+Выгрузка/
+Инструкция пользователя/
+CLAUDE.md
+MEMORY.md
+__pycache__/
+*.orig
+# скрипты для локальных тренировочных копий сцен (ссылаются на папки, которых в репозитории нет)
+check_practice.bat
+transfer_practice.bat
+reset_practice.bat
+restore_original.bat

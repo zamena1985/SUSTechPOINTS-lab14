@@ -1,0 +1,9 @@
+# bat-файлы всегда с CRLF: с LF у cmd.exe ломаются переходы по меткам
+*.bat text eol=crlf
+# бинарные данные не трогать
+*.png binary
+*.jpg binary
+*.gif binary
+*.h5 binary
+*.bin binary
+*.pcd binary
