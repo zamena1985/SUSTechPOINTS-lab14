@@ -1,15 +1,15 @@
 import * as THREE from './lib/three.module.js';
 
-import {ViewManager} from "./view.js";
-import {FastToolBox, FloatLabelManager} from "./floatlabel.js";
+import {ViewManager} from "./view.js?v=202610141215";
+import {FastToolBox, FloatLabelManager} from "./floatlabel.js?v=202610141215";
 import {Mouse} from "./mouse.js";
-import {BoxEditor, BoxEditorManager} from "./box_editor.js";
+import {BoxEditor, BoxEditorManager} from "./box_editor.js?v=202610141215";
 import {ImageContextManager} from "./image.js";
 import {globalObjectCategory} from "./obj_cfg.js";
 
 import {objIdManager} from "./obj_id_list.js";
 import {Header} from "./header.js";
-import {BoxOp} from './box_op.js';
+import {BoxOp} from './box_op.js?v=202610141215';
 import {AutoAdjust} from "./auto-adjust.js";
 import {PlayControl} from "./play.js";
 import {reloadWorldList, saveWorldList} from "./save.js";
@@ -116,6 +116,24 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
             function(){self.render();}, 
             function(box){self.on_box_changed(box)},
             this.editorCfg);
+
+        // точка под курсором для камеры (зум к курсору, скорость сдвига): ближайшая точка облака
+        // вдоль луча, иначе - пересечение с землёй
+        {
+            const rc = new THREE.Raycaster(); rc.params.Points = {threshold: 0.35};
+            const mv = this.viewManager.mainView;
+            mv.orbit.pickPoint = (cx, cy) => {
+                const w = this.data && this.data.world; if (!w || !w.lidar || !w.lidar.points) return null;
+                const r = this.container.getBoundingClientRect();
+                const ndc = new THREE.Vector2(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
+                rc.setFromCamera(ndc, mv.camera);
+                const hits = rc.intersectObject(w.lidar.points, false);
+                if (hits.length) { const h = hits[0].point; return {x: h.x, y: h.y, z: h.z}; }
+                const o = rc.ray.origin, d = rc.ray.direction; if (Math.abs(d.z) < 1e-6) return null;
+                const t = -o.z / d.z; if (t <= 0) return null;
+                return {x: o.x + d.x * t, y: o.y + d.y * t, z: 0};
+            };
+        }
         
 
         this.imageContextManager = new ImageContextManager(
@@ -129,6 +147,21 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
             this.addRangeCircle();
     
         this.floatLabelManager = new FloatLabelManager(this.editorUi, this.container, this.viewManager.mainView,function(box){self.selectBox(box);});
+        {   // кнопки отмены/повтора в шапке
+            let ub = this.editorUi.querySelector('#undo-button'), rb = this.editorUi.querySelector('#redo-button');
+            if (ub) ub.onclick = (e)=>{ e.stopPropagation(); this.undo(); };
+            if (rb) rb.onclick = (e)=>{ e.stopPropagation(); this.redo(); };
+            // страховка от браузеров, перехватывающих Ctrl+Z: ловим на window в фазе захвата
+            window.addEventListener('keydown', (ev)=>{
+                if (!(ev.ctrlKey || ev.metaKey) || ev.altKey === undefined) return;
+                let z = ev.code == 'KeyZ', y = ev.code == 'KeyY';
+                if (!z && !y) return;
+                let t = ev.target; if (t && (t.tagName == 'INPUT' || t.tagName == 'TEXTAREA' || t.isContentEditable)) return;
+                ev.preventDefault(); ev.stopPropagation();
+                ev._undoHandled = true;          // чтобы обработчик редактора не повторил отмену
+                if (y || (z && ev.shiftKey)) this.redo(); else this.undo();
+            }, true);
+        }
         this.fastToolBox = new FastToolBox(this.editorUi.querySelector("#obj-editor"), (event)=>this.handleFastToolEvent(event));
         //this.controlGui = this.init_gui();
         
@@ -912,7 +945,9 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
 
     this.render= function(){
 
-        this.viewManager.mainView.render();
+        // renderAll рисует и когда главный вид "неактивен" (курсор над боковыми окошками);
+        // иначе новая коробка появлялась только после движения камеры
+        this.viewManager.mainView.renderAll();
         this.boxEditor.boxView.render();
 
         this.floatLabelManager.update_all_position();
@@ -1488,9 +1523,9 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
             }
         }
         
-        // guess obj type here
-        
-        box.obj_type = globalObjectCategory.guess_obj_type_by_dimension(box.scale);
+        // класс по умолчанию для новых коробок: Infrastructure (задание - наборы 2-4 ТЗ;
+        // угадывание по размеру бесполезно - у куратора все крупные классы одного размера)
+        box.obj_type = this.DEFAULT_NEW_BOX_TYPE || globalObjectCategory.guess_obj_type_by_dimension(box.scale);
         
         objIdManager.addObject({
             category: box.obj_type,
@@ -1504,14 +1539,18 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
 
         this.selectBox(box);
         this.on_box_changed(box);
+        this.render();   // показать коробку сразу, не дожидаясь ответа нейросети (авто-поворот идёт на сервере)
 
         if (!shift){
-            this.boxOp.auto_rotate_xyz(box, ()=>{
-                box.obj_type = globalObjectCategory.guess_obj_type_by_dimension(box.scale);
+            const finish = ()=>{
+                box.obj_type = this.DEFAULT_NEW_BOX_TYPE || globalObjectCategory.guess_obj_type_by_dimension(box.scale);
                 this.floatLabelManager.set_object_type(box.obj_local_id, box.obj_type);
                 this.fastToolBox.setValue(box.obj_type, box.obj_track_id, box.obj_attr);
                 this.on_box_changed(box);
-            });
+                this.render();
+            };
+            // если предсказание поворота упало или зависло - коробка всё равно остаётся на экране
+            Promise.resolve(this.boxOp.auto_rotate_xyz(box, finish)).catch(e=>{ logger.log(e); finish(); });
         }
         
         
@@ -1891,7 +1930,96 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
         return box;
     };
 
+    // класс новой коробки при выделении области (null = угадывать по размеру)
+    this.DEFAULT_NEW_BOX_TYPE = "Infrastructure";
+
+    // ---------- отмена / повтор (Ctrl+Z / Ctrl+Y) ----------
+    // На каждый кадр - стек снимков разметки (JSON всех коробок). Снимок делается
+    // ПЕРЕД каждым изменением; отмена = вернуть предыдущий снимок через reapplyAnnotation.
+    this.UNDO_LIMIT = 100;
+    this.UNDO_GESTURE_MS = 150;   // запасной порог: вызовы чаще этого по одной коробке = одно движение
+    // явное начало/конец движения мышью (ручки в окошках коробки): один снимок на всё движение
+    this.undoBeginGesture = function(box){
+        box = box || this.selected_box; if (!box || !box.world || this._undoApplying) return;
+        let st = this._undoStack(box.world);
+        let snap = this._snapshot(box.world);
+        let last = st.past[st.past.length - 1];
+        if (!(last && JSON.stringify(last) === JSON.stringify(snap))){
+            st.past.push(snap);
+            if (st.past.length > this.UNDO_LIMIT) st.past.shift();
+            st.future = [];
+        }
+        st.gesture = box;
+        this.undoRefreshUi();
+    };
+    this.undoEndGesture = function(box){
+        box = box || this.selected_box; if (!box || !box.world) return;
+        let st = this._undoStack(box.world);
+        st.gesture = null; st.lastBox = null; st.lastTime = 0;
+    };
+    this._undoStack = function(world){
+        if (!world) return null;
+        if (!world._undo) world._undo = {past: [], future: []};
+        return world._undo;
+    };
+    this._snapshot = function(world){
+        return JSON.parse(JSON.stringify(world.annotation.toBoxAnnotations()));
+    };
+    this.undoPush = function(world){
+        world = world || this.data.world;
+        let st = this._undoStack(world);
+        if (!st) return;
+        if (this._undoApplying) return;            // не записывать сам откат
+        let snap = this._snapshot(world);
+        let last = st.past[st.past.length - 1];
+        if (last && JSON.stringify(last) === JSON.stringify(snap)) return;   // ничего не изменилось
+        st.past.push(snap);
+        if (st.past.length > this.UNDO_LIMIT) st.past.shift();
+        st.future = [];
+        st.lastBox = null; st.lastTime = 0;
+        this.undoRefreshUi();
+    };
+    this._undoApply = function(world, snap){
+        this._undoApplying = true;
+        try {
+            let selId = this.selected_box ? this.selected_box.obj_track_id : null;
+            if (this.selected_box) { this.unselectBox(null, true); this.unselectBox(null, true); this.selected_box = null; }
+            world.annotation.reapplyAnnotation(snap);
+            world.annotation.setModified();
+            this.render2dLabels(world);
+            if (!this.imageContextManager.hidden()) this.imageContextManager.render_2d_image();
+            this.header.updateModifiedStatus();
+            if (selId !== null) {
+                let b = world.annotation.findBoxByTrackId(selId);
+                if (b) this.selectBox(b);
+            }
+            this.render();
+        } finally { this._undoApplying = false; let st = this._undoStack(world); if (st) { st.lastBox = null; st.lastTime = 0; } this.undoRefreshUi(); }
+    };
+    this._undoBeacon = function(tag){};   // отладка отключена
+    if (!this._undoTimer) this._undoTimer = setInterval(()=>{ try { this.undoRefreshUi(); } catch(e){} }, 500);
+    this.undoRefreshUi = function(){
+        try {
+            let st = this._undoStack(this.data.world);
+            let el = document.querySelector('#undo-count');
+            if (el) el.textContent = st ? st.past.length : 0;
+        } catch(e) {}
+    };
+    this.undo = function(){
+        let world = this.data.world; let st = this._undoStack(world);
+        if (!st || st.past.length == 0) { this.infoBox && this.infoBox.show("Отмена", "Нечего отменять в этом кадре."); return; }
+        st.future.push(this._snapshot(world));
+        this._undoApply(world, st.past.pop());
+    };
+    this.redo = function(){
+        let world = this.data.world; let st = this._undoStack(world);
+        if (!st || st.future.length == 0) return;
+        st.past.push(this._snapshot(world));
+        this._undoApply(world, st.future.pop());
+    };
+
     this.add_box= function(pos, scale, rotation, obj_type, obj_track_id, obj_attr){
+        this.undoPush(this.data.world);
         let box = this.data.world.annotation.add_box(pos, scale, rotation, obj_type, obj_track_id, obj_attr);
 
         this.floatLabelManager.add_label(box);
@@ -2028,7 +2156,24 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
 
         this.operation_state.key_pressed = true;
 
-        switch ( ev.key) {
+        if (ev.ctrlKey && (ev.code == 'KeyZ' || ev.code == 'KeyY')) this._undoBeacon('keydown-editor:' + ev.code);
+        if (ev._undoHandled) return;
+        if ((ev.ctrlKey || ev.metaKey) && (ev.key == 'z' || ev.key == 'Z' || ev.key == 'я' || ev.key == 'Я' || ev.code == 'KeyZ')){
+            ev.preventDefault();
+            if (ev.shiftKey) this.redo(); else this.undo();
+            return;
+        }
+        if ((ev.ctrlKey || ev.metaKey) && (ev.key == 'y' || ev.key == 'Y' || ev.key == 'н' || ev.key == 'Н' || ev.code == 'KeyY')){
+            ev.preventDefault();
+            this.redo();
+            return;
+        }
+
+        // горячие клавиши в любой раскладке: берём латинскую букву по физической клавише
+        // (в русской раскладке Q даёт 'й', и 'q' не совпадало - клавиши "не работали")
+        let keyName = ev.key;
+        if (ev.code && /^Key[A-Z]$/.test(ev.code) && !ev.ctrlKey && !ev.metaKey) keyName = ev.code.slice(3).toLowerCase();
+        switch ( keyName ) {
             case '+':
             case '=':
                 this.data.scale_point_size(1.2);
@@ -2135,6 +2280,16 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
                 }
                 break;
 
+            case 'h':   // подогнать коробку инфраструктуры по точкам
+                if (this.selected_box){
+                    this.undoPush(this.selected_box.world);
+                    let r = this.boxOp.fit_infrastructure(this.selected_box);
+                    this.on_box_changed(this.selected_box);
+                    this.render();
+                    logger.log((r.ok ? "Подгонка: " : "Подгонка не удалась: ") + r.msg);
+                    if (!r.ok && this.infoBox) this.infoBox.show("Подгонка не удалась", r.msg);
+                }
+                break;
             case 'q':
                 if (this.selected_box){
                     this.boxOp.rotate_z(this.selected_box, this.editorCfg.rotateStep, false);
@@ -2386,6 +2541,7 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
 
 
     this.remove_box = function(box, render=true){
+        if (box && box.world) this.undoPush(box.world);
         if (box === this.selected_box){
             this.unselectBox(null,true);
             this.unselectBox(null,true); //twice to safely unselect.
@@ -2469,6 +2625,30 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
 
     //box edited
     this.on_box_changed = function(box){
+
+        if (box && box.world && !this._undoApplying){
+            // Перетаскивание мышью вызывает on_box_changed десятки раз за одно движение.
+            // Считаем серию быстрых вызовов по одной коробке одним действием: снимок
+            // "до" берём только в начале серии (пауза > UNDO_GESTURE_MS или другая коробка).
+            let st = this._undoStack(box.world);
+            let now = Date.now();
+            let sameGesture = st.gesture === box || (st.lastBox === box && (now - (st.lastTime || 0)) < this.UNDO_GESTURE_MS);
+            if (!sameGesture){
+                let snap = this._snapshot(box.world);
+                if (box.last_info){
+                    let a = snap.find(x => String(x.obj_id) === String(box.obj_track_id) && x.obj_type === box.obj_type);
+                    if (a) a.psr = JSON.parse(JSON.stringify(box.last_info));
+                }
+                let last = st.past[st.past.length - 1];
+                if (!(last && JSON.stringify(last) === JSON.stringify(snap))){
+                    st.past.push(snap);
+                    if (st.past.length > this.UNDO_LIMIT) st.past.shift();
+                    st.future = [];
+                }
+            }
+            st.lastBox = box; st.lastTime = now;
+            this.undoRefreshUi();
+        }
 
         if (!this.imageContextManager.hidden())
             this.imageContextManager.boxes_manager.update_box(box);

@@ -546,11 +546,23 @@ class FloatLabelManager {
         var width = this.container.clientWidth, height = this.container.clientHeight;
         var widthHalf = width / 2, heightHalf = height / 2;
 
+        // Подпись прячем только если её якорь действительно за пределами экрана или закрыт
+        // панелью окошек коробки (слева, когда она открыта). Раньше скрывалась жёсткая полоса
+        // x<-0.6 / x>0.9 - подписи объектов у краёв пропадали до поворота камеры.
+        var leftCover = -1;
+        try {
+            var sub = this.editor_ui.querySelector("#sub-views");
+            if (sub && sub.offsetParent !== null && sub.clientWidth > 0)
+                leftCover = -1 + 2 * (sub.getBoundingClientRect().right - this.container.getBoundingClientRect().left) / width;
+        } catch (e) {}
+        var px = ( p.x * widthHalf ) + widthHalf + 10;
+        // якорь под панелью окошек коробки: не прятать, а прижать подпись к правому краю панели
+        var coverPx = ( leftCover * widthHalf ) + widthHalf;
+        if (leftCover > -1 && p.x < leftCover && p.x >= -1) px = coverPx + 6;   // якорь внутри экрана, но под панелью
         var ret={
-            x: ( p.x * widthHalf ) + widthHalf + 10,
+            x: px,
             y: - ( p.y * heightHalf ) + heightHalf - 10,
-            out_view: p.x>0.9 || p.x<-0.6 || p.y<-0.9 || p.y>0.9 || p.z< -1 || p.z > 1,
-            // p.x<-0.6 to prevent it from appearing ontop of sideviews.
+            out_view: p.x>0.98 || p.x<-1 || p.y<-0.98 || p.y>0.98 || p.z< -1 || p.z > 1,
         }
 
         return ret;

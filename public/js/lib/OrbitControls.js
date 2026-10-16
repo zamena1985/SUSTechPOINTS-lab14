@@ -74,6 +74,12 @@ class OrbitControls extends EventDispatcher {
 		this.enablePan = true;
 		this.panSpeed = 1.0;
 		this.screenSpacePanning = true; // if false, pan orthogonal to world-space direction camera.up
+		// Доработка: точка под курсором (ставит приложение). Колесо "внутрь" переносит цель
+		// вращения к ней, а скорость сдвига считается от расстояния до неё (минимум panMinDistance):
+		// иначе у цели, оставшейся далеко позади точек, зум и сдвиг "замирали".
+		this.pickPoint = null;          // function(clientX, clientY) -> {x,y,z} | null
+		this.panMinDistance = 5.0;
+		this._lastPick = null;
 		this.keyPanSpeed = 7.0;	// pixels moved per arrow key push
 
 		// Set to true to automatically rotate around the target
@@ -437,6 +443,12 @@ class OrbitControls extends EventDispatcher {
 					const position = scope.object.position;
 					offset.copy( position ).sub( scope.target );
 					let targetDistance = offset.length();
+					if ( scope._lastPick ) {
+						const dPick = scope.object.position.distanceTo( scope._lastPick );
+						targetDistance = Math.max( scope.panMinDistance, Math.min( targetDistance, dPick ) );
+					} else {
+						targetDistance = Math.max( scope.panMinDistance, targetDistance );
+					}
 
 					// half of the fov is center to top of screen
 					targetDistance *= Math.tan( ( scope.object.fov / 2 ) * Math.PI / 180.0 );
@@ -522,6 +534,7 @@ class OrbitControls extends EventDispatcher {
 		}
 
 		function handleMouseDownPan( event ) {
+			if ( scope.pickPoint ) { try { const p = scope.pickPoint( event.clientX, event.clientY ); scope._lastPick = p ? new Vector3( p.x, p.y, p.z ) : null; } catch ( e ) {} }
 
 			panStart.set( event.clientX, event.clientY );
 
@@ -588,6 +601,21 @@ class OrbitControls extends EventDispatcher {
 		}
 
 		function handleMouseWheel( event ) {
+
+			if ( scope.pickPoint ) {
+				try {
+					const p = scope.pickPoint( event.clientX, event.clientY );
+					scope._lastPick = p ? new Vector3( p.x, p.y, p.z ) : null;
+					if ( p && event.deltaY < 0 ) {
+						// цель вращения - к точке под курсором, камера остаётся на месте
+						const curDist = scope.object.position.distanceTo( scope.target );
+						const pickDist = scope.object.position.distanceTo( scope._lastPick );
+						if ( pickDist < curDist * 0.9 || pickDist > curDist * 1.5 ) {
+							scope.target.copy( scope._lastPick );
+						}
+					}
+				} catch ( e ) {}
+			}
 
 			if ( event.deltaY < 0 ) {
 
@@ -1258,6 +1286,22 @@ class OrbitControls extends EventDispatcher {
 		scope.domElement.addEventListener( 'contextmenu', onContextMenu );
 
 		scope.domElement.addEventListener( 'pointerdown', onPointerDown );
+
+		// Страховка: если кнопку отпустили вне холста (над окошками коробки, картинкой камеры,
+		// меню), 'pointerup' до холста не доходит, state застревает в PAN/DOLLY и колесо
+		// перестаёт работать до следующего клика. Сбрасываем состояние на уровне окна.
+		const _forceIdle = () => {
+			if ( state !== STATE.NONE ) {
+				state = STATE.NONE;
+				pointers.length = 0;
+				scope.domElement.removeEventListener( 'pointermove', onPointerMove );
+				scope.domElement.removeEventListener( 'pointerup', onPointerUp );
+				scope.dispatchEvent( _endEvent );
+			}
+		};
+		window.addEventListener( 'pointerup', _forceIdle, true );
+		window.addEventListener( 'pointercancel', _forceIdle, true );
+		window.addEventListener( 'blur', _forceIdle );
 		scope.domElement.addEventListener( 'pointercancel', onPointerCancel );
 		scope.domElement.addEventListener( 'wheel', onMouseWheel, { passive: false } );
 

@@ -303,7 +303,8 @@ var ml = {
             }
         })        
         .catch(reject=>{
-            console.log("error predicting yaw angle!");            
+            console.log("error predicting yaw angle!", reject);
+            return {angle: null};   // раньше возвращалось undefined и цепочка .then падала на ret.angle
         });
         
     },

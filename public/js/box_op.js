@@ -6,7 +6,7 @@ import {
 	Vector3
 } from "./lib/three.module.js";
 
-import{ml} from "./ml.js";
+import{ml} from "./ml.js?v=202610141215";
 import {dotproduct, transpose, matmul, euler_angle_to_rotate_matrix_3by3} from "./util.js"
 
 
@@ -328,6 +328,51 @@ function BoxOp(){
 
         
     }
+
+    // ---- подгонка коробки инфраструктуры по точкам (клавиша H) ----
+    // Делает только то, что нельзя сделать неправильно: убирает землю из коробки (низ = земля),
+    // стягивает стороны к точкам, которые УЖЕ внутри коробки пользователя, и убирает наклон.
+    // Поворот не трогает (его задаёт пользователь Q/E). Соседей не захватывает: коробка не растёт.
+    // (Попытка полной автоподгонки с поиском угла и границ отброшена: в плотной застройке
+    //  затягивала соседние стеллажи - проверено на кадрах куратора.)
+    this.fit_infrastructure = function(box){
+        const GROUND_MARGIN = 0.25, PAD = 0.05;
+        const lidar = box.world.lidar;
+        const pos = lidar.points.geometry.getAttribute("position").array;
+        box.rotation.x = 0; box.rotation.y = 0;
+        // земля: нижние точки в кольце вокруг коробки (шире неё на 2 м, высота +-2 м)
+        const probe = {position: box.position, scale: {x: box.scale.x+4, y: box.scale.y+4, z: box.scale.z+4}, rotation: box.rotation, world: box.world};
+        const ring = lidar._get_points_of_box(lidar.points, probe, 1).index;
+        if (ring.length < 20) return {ok: false, msg: "слишком мало точек рядом с коробкой"};
+        const zs = ring.map(i => pos[i*3+2]).sort((a,b)=>a-b);
+        const ground = zs[Math.floor(zs.length*0.05)];
+        // точки объекта: внутри коробки пользователя (с запасом 5 см) и выше земли
+        const got = lidar._get_points_of_box(lidar.points, box, 1.0);
+        const rel = got.position;   // в осях коробки, относительно её центра
+        const keep = [];
+        for (let i=0;i<rel.length;i++){ const zAbs = rel[i][2] + box.position.z; if (zAbs > ground + GROUND_MARGIN) keep.push(rel[i]); }
+        if (keep.length < 10) return {ok: false, msg: "внутри коробки почти нет точек выше земли - сначала обведите объект"};
+        let lo=[Infinity,Infinity,Infinity], hi=[-Infinity,-Infinity,-Infinity];
+        keep.forEach(p => { for (let k=0;k<3;k++){ if (p[k]<lo[k]) lo[k]=p[k]; if (p[k]>hi[k]) hi[k]=p[k]; } });
+        // центр/размеры по x,y в осях коробки; по z - низ на земле, верх по точкам
+        // Правило "только уменьшать": подгонка никогда не делает коробку больше, чем нарисовал
+        // пользователь, - иначе в плотной застройке затягивает соседей (проверено на 898/885).
+        // Длинные объекты (>15 м): по длине не трогаем вовсе - лидар редеет к концам стены.
+        const LONG = 15.0;
+        const ox = box.scale.x, oy = box.scale.y;
+        for (const k of [0,1]) {
+            const half = (k === 0 ? ox : oy)/2;
+            if ((k === 0 ? ox : oy) > LONG) { lo[k] = -half; hi[k] = half; continue; }   // длинная сторона - как была
+            lo[k] = Math.max(lo[k], -half); hi[k] = Math.min(hi[k], half);               // не выходить за исходную
+        }
+        const dx = (lo[0]+hi[0])/2, dy = (lo[1]+hi[1])/2;
+        const c = Math.cos(box.rotation.z), sn = Math.sin(box.rotation.z);
+        box.position.x += dx*c - dy*sn; box.position.y += dx*sn + dy*c;
+        box.scale.x = Math.min(ox, (hi[0]-lo[0]) + 2*PAD); box.scale.y = Math.min(oy, (hi[1]-lo[1]) + 2*PAD);
+        const ztop = box.position.z + hi[2];
+        box.position.z = (ground + ztop)/2; box.scale.z = (ztop - ground) + PAD;
+        return {ok: true, points: keep.length, msg: `стянуто по ${keep.length} точкам: ${box.scale.x.toFixed(1)} x ${box.scale.y.toFixed(1)} x ${box.scale.z.toFixed(1)} м, низ на земле`};
+    };
 
     this.auto_shrink_box= function(box){
         var  extreme = box.world.lidar.get_points_dimmension_of_box(box);

@@ -107,6 +107,44 @@ class ProjectiveView{
             this.on_wheel(event.deltaY);        
         };
 
+        // правая кнопка: сдвиг вида (камеры); коробка при этом не меняется.
+        // Слушаем на document в фазе захвата: ручки SVG и родительские меню не успевают перехватить.
+        if (!ProjectiveView._panInstalled) {
+            ProjectiveView._panInstalled = true;
+            const owner = el => { let m = el && el.closest && el.closest(".view-manipulator"); return m && m._projView; };
+            let drag = null, lastRightUp = 0;
+            const block = e => { if (owner(e.target)) { e.preventDefault(); e.stopPropagation(); return false; } };
+            // блокируем меню браузера на всех уровнях: разные браузеры (Chrome, Comet, Edge) слушают разное
+            for (const tgt of [window, document, document.body]) {
+                tgt.addEventListener("contextmenu", block, true);
+                tgt.addEventListener("contextmenu", block, false);
+                tgt.addEventListener("auxclick", block, true);
+            }
+            document.addEventListener("mousedown", e => {
+                const pv = owner(e.target);
+                if (!pv || e.button != 2 || !pv.on_pan) return;
+                e.preventDefault(); e.stopPropagation();
+                drag = { pv, x: e.clientX, y: e.clientY, moved: false };
+            }, true);
+            document.addEventListener("mousemove", e => {
+                if (!drag) return;
+                e.preventDefault(); e.stopPropagation();
+                const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+                if (dx || dy) { drag.moved = true; drag.pv.on_pan(dx, dy); drag.x = e.clientX; drag.y = e.clientY; }
+            }, true);
+            document.addEventListener("mouseup", e => {
+                if (e.button != 2) return;
+                const pv = drag ? drag.pv : owner(e.target);
+                if (drag) { e.preventDefault(); e.stopPropagation(); }
+                const now = Date.now();
+                if (pv && !(drag && drag.moved) && now - lastRightUp < 400) pv.on_pan(null, null);  // двойной правый щелчок - в центр
+                lastRightUp = now; drag = null;
+            }, true);
+        }
+        ui._projView = this;
+        ui.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); return false; };
+        if (this.svg) this.svg.oncontextmenu = ui.oncontextmenu;
+
         this.install_edge_hanler('left', this.handles.left,   this.lines,   {x:-1,y:0});
         this.install_edge_hanler('right', this.handles.right,  this.lines,   {x:1, y:0});
         this.install_edge_hanler('top', this.handles.top,    this.lines,   {x:0, y:1});
@@ -402,8 +440,8 @@ class ProjectiveView{
     
         // viewport width/height is position-irrelavent
         // so x and y is relative value.
-        var x = viewport.width/2;//viewport.left + viewport.width/2;
-        var y = viewport.height/2//viewport.bottom - viewport.height/2;
+        var x = viewport.width/2 + (viewport.pan ? viewport.pan.x : 0);
+        var y = viewport.height/2 - (viewport.pan ? viewport.pan.y : 0);
     
         var left = x-width/2;
         var right = x+width/2;
@@ -565,12 +603,14 @@ class ProjectiveView{
 
             handle.onmouseleave = null;
 
+            if (window.editor && window.editor.undoBeginGesture) window.editor.undoBeginGesture();
             this.mouse_start_pos={x: event.layerX,y:event.layerY,};
             let mouse_cur_pos = {x: this.mouse_start_pos.x, y: this.mouse_start_pos.y};
 
             console.log(this.mouse_start_pos);
 
             svg.onmouseup = (event)=>{
+                if (window.editor && window.editor.undoEndGesture) window.editor.undoEndGesture();
                 svg.onmousemove = null;
                 svg.onmouseup=null;
                 this.enable_handles();
@@ -682,6 +722,7 @@ class ProjectiveView{
                 x: parseInt(line.getAttribute('x1')),
             }
 
+            if (window.editor && window.editor.undoBeginGesture) window.editor.undoBeginGesture();
             this.mouse_start_pos={
                 x: event.layerX,
                 y:event.layerY,
@@ -716,6 +757,7 @@ class ProjectiveView{
             };
 
             svg.onmouseup = event=>{
+                if (window.editor && window.editor.undoEndGesture) window.editor.undoEndGesture();
                 svg.onmousemove = null;
                 svg.onmouseup=null;
 
@@ -739,8 +781,9 @@ class ProjectiveView{
     }
 
     on_key_down(event){
-        
-        switch(event.key){
+        let keyName = event.key;
+        if (event.code && /^Key[A-Z]$/.test(event.code) && !event.ctrlKey && !event.metaKey) keyName = event.code.slice(3).toLowerCase();
+        switch(keyName){
             case 'e':
                 event.preventDefault();
                 event.stopPropagation();
@@ -1130,6 +1173,16 @@ class ProjectiveViewOps{
             scope.on_box_changed(scope.box);
         }
 
+        function on_z_pan(dx_px, dy_px){
+            let v = scope.views[0];
+            if (dx_px === null) { v.resetPan(); scope.boxEditor.updateViewZoomRatio(0, v.zoom_ratio); return; }
+            let mpp = v.metersPerPixel();
+            // тянем сцену за мышью: камера едет в противоположную сторону
+            v.pan.u -= dx_px * mpp;
+            v.pan.v += dy_px * mpp;
+            scope.boxEditor.updateViewZoomRatio(0, v.zoom_ratio);
+        }
+
         function on_z_wheel(wheel_direction){
             let multiplier = get_wheel_multiplier(wheel_direction);
             let newRatio = scope.views[0].zoom_ratio *= multiplier;
@@ -1192,6 +1245,7 @@ class ProjectiveViewOps{
                                             default_on_focus,
                                             default_on_del,
                                             this.isActive.bind(this));
+        this.z_view_handle.on_pan = on_z_pan;
 
 
         ///////////////////////////////////////////////////////////////////////////////////
@@ -1274,7 +1328,10 @@ class ProjectiveViewOps{
         }
 
         function on_y_direction_changed(theta, sticky){
-            scope.boxOp.change_rotation_y(scope.box, theta, sticky, scope.on_box_changed)
+            // Q/E в боковом окошке: раньше наклоняли коробку вокруг горизонтальной оси
+            // (так "заваливались" стены). Для нашей разметки нужен только поворот вокруг вертикали.
+            scope.boxOp.rotate_z(scope.box, theta, sticky);
+            scope.on_box_changed(scope.box);
         }
 
 
@@ -1293,6 +1350,16 @@ class ProjectiveViewOps{
             }
             
             scope.on_box_changed(scope.box);
+        }
+
+        function on_y_pan(dx_px, dy_px){
+            let v = scope.views[1];
+            if (dx_px === null) { v.resetPan(); scope.boxEditor.updateViewZoomRatio(1, v.zoom_ratio); return; }
+            let mpp = v.metersPerPixel();
+            // тянем сцену за мышью: камера едет в противоположную сторону
+            v.pan.u -= dx_px * mpp;
+            v.pan.v += dy_px * mpp;
+            scope.boxEditor.updateViewZoomRatio(1, v.zoom_ratio);
         }
 
         function on_y_wheel(wheel_direction){
@@ -1324,6 +1391,7 @@ class ProjectiveViewOps{
                                                     default_on_focus,
                                                     default_on_del,
                                                     this.isActive.bind(this));
+        this.y_view_handle.on_pan = on_y_pan;
 
 
         ///////////////////////////////////////////////////////////////////////////////////
@@ -1406,7 +1474,9 @@ class ProjectiveViewOps{
         }
 
         function on_x_direction_changed(theta, sticky){
-            scope.boxOp.change_rotation_x(scope.box, -theta, sticky, scope.on_box_changed)
+            // то же для переднего окошка: поворот только вокруг вертикали
+            scope.boxOp.rotate_z(scope.box, theta, sticky);
+            scope.on_box_changed(scope.box);
         }
 
         function on_x_scaled(ratio){
@@ -1423,6 +1493,16 @@ class ProjectiveViewOps{
             }
             
             scope.on_box_changed(scope.box);
+        }
+
+        function on_x_pan(dx_px, dy_px){
+            let v = scope.views[2];
+            if (dx_px === null) { v.resetPan(); scope.boxEditor.updateViewZoomRatio(2, v.zoom_ratio); return; }
+            let mpp = v.metersPerPixel();
+            // тянем сцену за мышью: камера едет в противоположную сторону
+            v.pan.u -= dx_px * mpp;
+            v.pan.v += dy_px * mpp;
+            scope.boxEditor.updateViewZoomRatio(2, v.zoom_ratio);
         }
 
         function on_x_wheel(wheel_direction){
@@ -1455,6 +1535,7 @@ class ProjectiveViewOps{
                                                     default_on_focus,
                                                     default_on_del,
                                                     this.isActive.bind(this));
+        this.x_view_handle.on_pan = on_x_pan;
 
     }  // end of constructor
 

@@ -1,10 +1,10 @@
 
-import {ProjectiveViewOps}  from "./side_view_op.js"
+import {ProjectiveViewOps}  from "./side_view_op.js?v=202610141215"
 import {BoxImageContext} from "./image.js";
 import {saveWorldList, reloadWorldList} from "./save.js"
 import {objIdManager} from "./obj_id_list.js"
 import { globalKeyDownManager } from "./keydown_manager.js";
-import{ml} from "./ml.js";
+import{ml} from "./ml.js?v=202610141215";
 import { BooleanKeyframeTrack } from "./lib/three.module.js";
 import { checkScene } from "./error_check.js";
 import { logger } from "./log.js";
@@ -193,6 +193,7 @@ function BoxEditor(parentUi, boxEditorManager, viewManager, cfg, boxOp,
 
     this.box = null;
     this.attachBox = function(box){
+        if (this.boxView) this.boxView.views.forEach(v=>v.resetPan && v.resetPan());   // любое подключение коробки - вид по центру
         if (this.box && this.box !== box){
             this.box.boxEditor=null;
             console.log("detach box editor");
@@ -650,7 +651,9 @@ function BoxEditorManager(parentUi, viewManager, objectTrackView,
 
     this.handleContextMenuKeydownEvent = function(event, menuPos)
     {
-        switch(event.key){
+        let keyName = event.key;
+        if (event.code && /^Key[A-Z]$/.test(event.code) && !event.metaKey) keyName = event.code.slice(3).toLowerCase();
+        switch(keyName){
         case 's':
             this.activeEditorList().forEach(e=>e.setSelected(true));
             return true;
@@ -1199,8 +1202,10 @@ function BoxEditorManager(parentUi, viewManager, objectTrackView,
 
 
     this.keydownHandler = (event)=>{
+        let keyName = event.key;
+        if (event.code && /^Key[A-Z]$/.test(event.code) && !event.metaKey) keyName = event.code.slice(3).toLowerCase();
 
-        switch(event.key){
+        switch(keyName){
             case 'a':
                 if (event.ctrlKey){
                     this.activeEditorList().forEach(e=>e.setSelected(true));            

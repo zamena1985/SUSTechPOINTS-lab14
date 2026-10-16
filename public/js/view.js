@@ -1,5 +1,5 @@
 import * as THREE from './lib/three.module.js';
-import { OrbitControls } from './lib/OrbitControls.js';
+import { OrbitControls } from './lib/OrbitControls.js?v=202610141215';
 //import { OrthographicTrackballControls } from './lib/OrthographicTrackballControls.js';
 import { TransformControls } from './lib/TransformControls.js';
 import {matmul2, euler_angle_to_rotate_matrix} from "./util.js"
@@ -167,6 +167,7 @@ function ViewManager(mainViewContainer, webglScene, webglMainScene, renderer, gl
 
 
         var orbit_perspective = new OrbitControls( view.camera_perspective, view.container );
+        orbit_perspective.minDistance = 1.5;   // ближе цели камера не подлетает: у 0 зум "залипал" (ближняя плоскость 1 м)
         orbit_perspective.update();
         orbit_perspective.addEventListener( 'change', globalRenderFunc );
         //orbit_perspective.enabled = true;
@@ -409,6 +410,7 @@ function BoxView(ui, mainViewContainer, scene, renderer, viewManager){
     this.box = this.defaultBox;
     
     this.attachBox = function(box){
+        this.views.forEach((v)=>v.resetPan && v.resetPan());
         
         this.box = box;
 
@@ -424,6 +426,7 @@ function BoxView(ui, mainViewContainer, scene, renderer, viewManager){
     };
     this.detach = function(){
         this.box = this.defaultBox;
+        this.views.forEach((v)=>v.resetPan());
         this.onBoxChanged();
     };
 
@@ -456,6 +459,19 @@ function BoxView(ui, mainViewContainer, scene, renderer, viewManager){
 
 
     scope.projViewProto = {
+        // сдвиг вида (правая кнопка мыши): в метрах, в осях коробки
+        pan: {u: 0, v: 0},
+        resetPan(){ this.pan = {u: 0, v: 0}; },
+        // метры на пиксель по текущему масштабу камеры
+        metersPerPixel(){
+            let w = this.camera.right - this.camera.left;
+            return w / Math.max(1, this.placeHolderUi.clientWidth);
+        },
+        // сдвиг в пикселях экрана (для рамки-манипулятора)
+        panPixels(){
+            let mpp = this.metersPerPixel();
+            return {x: -this.pan.u / mpp, y: this.pan.v / mpp};
+        },
         render(){
             let vp = this.getViewPort();
             
@@ -473,6 +489,7 @@ function BoxView(ui, mainViewContainer, scene, renderer, viewManager){
                 width : this.placeHolderUi.clientWidth,
                 height : this.placeHolderUi.clientHeight,
                 zoom_ratio: this.zoom_ratio,
+                pan: this.panPixels ? this.panPixels() : {x: 0, y: 0},
             }
         },
 
@@ -525,6 +542,8 @@ function BoxView(ui, mainViewContainer, scene, renderer, viewManager){
             //
             this.cameraContainer.position.set(p.x, p.y, p.z);
             this.cameraContainer.rotation.set(r.x, r.y, r.z);
+            // сдвиг вида внутри осей коробки: экран вправо = -y, вверх = +x
+            this.camera.position.set(this.pan.v, -this.pan.u, 0);
         };
 
         view.updateCameraRange=function(box){
@@ -630,6 +649,8 @@ function BoxView(ui, mainViewContainer, scene, renderer, viewManager){
             view.cameraContainer.rotation.x=r.x;
             view.cameraContainer.rotation.y=r.y;
             view.cameraContainer.rotation.z=r.z;
+            // сдвиг вида: экран вправо = +x, вверх = +z
+            view.camera.position.set(view.pan.u, 0, view.pan.v);
             //view.cameraContainer.updateProjectionMatrix();
 
             // var trans_matrix = euler_angle_to_rotate_matrix(r, p);
@@ -748,6 +769,8 @@ function BoxView(ui, mainViewContainer, scene, renderer, viewManager){
 
             this.cameraContainer.position.set(p.x, p.y, p.z);
             this.cameraContainer.rotation.set(r.x, r.y, r.z);
+            // сдвиг вида: экран вправо = -y, вверх = +z
+            this.camera.position.set(0, -this.pan.u, this.pan.v);
         };
 
         view.updateCameraRange=function(box){
