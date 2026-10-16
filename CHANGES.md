@@ -58,3 +58,8 @@
   порядок работы по сериям, ошибки проверки, клавиши). README авторов перенесён в doc/README_upstream.md.
   Картинки гайда: doc/guide/. PDF-версия: doc/guide_ru.pdf, собирается tools/build_guide.py
   (Markdown -> HTML -> печать в PDF через Chrome).
+- Пакет обновления для уже установленных копий: tools/make_update.py собирает dist/SUSTechPOINTS-update.zip
+  только из файлов программы (без data, без документации авторов). update.bat в корне: проверяет, что лежит
+  в папке программы, обновляет пакеты Python, напоминает про Ctrl+F5. tools/findpy.bat: единый поиск Python
+  для всех bat-файлов (папка python портативной версии, затем venv, затем .venv из инструкции куратора).
+  Все bat-файлы в репозитории - CRLF (с LF cmd теряет позицию в файле после chcp 65001).

@@ -1,7 +1,8 @@
 @echo off
-rem Проверка разметки Infrastructure в настоящей сцене (кадры 64-83).
-rem Перед запуском сохраните разметку в браузере (Ctrl+S).
+rem Проверка разметки Infrastructure/Pipes/Dust по точкам. Перед запуском сохраните разметку (Ctrl+S).
+rem Пример: check.bat --frames 76-78        другая сцена: check.bat --scene data\имя_сцены --frames 1-3
 cd /d "%~dp0"
 chcp 65001 >nul
-venv\Scripts\python tools\infra_check.py --frames 64-83 %*
+call toolsindpy.bat || exit /b 1
+%PY% tools\infra_check.py --frames 64-83 %*
 pause
