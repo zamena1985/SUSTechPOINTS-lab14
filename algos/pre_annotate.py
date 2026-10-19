@@ -1,51 +1,108 @@
+# -*- coding: utf-8 -*-
+"""
+Авто-поворот новой коробки.
 
+С TensorFlow: нейросеть авторов SUSTechPOINTS (обучена на машинах и пешеходах) по 512 точкам
+объекта предсказывает угол с шагом 3 градуса.
+Без TensorFlow (или при SUSTECH_NO_TF=1): угол длинной стороны минимального прямоугольника,
+описанного вокруг точек объекта в плане. Для стен, стеллажей и труб это и есть нужный поворот;
+для техники "перед" таким способом не определить - его правит разметчик.
+"""
 import os
-import tensorflow as tf
-
-
-
-import numpy as np
-
-from . import util
 import glob
 import math
 import json
-
-util.config_gpu()
-
+import numpy as np
+from . import util
 
 RESAMPLE_NUM = 10
-
+NUM_POINT = 512
 model_file = "./algos/models/deep_annotation_inference.h5"
 
-rotation_model = tf.keras.models.load_model(model_file)
-rotation_model.summary()
+rotation_model = None
+tf = None
+if os.environ.get("SUSTECH_NO_TF") == "1":
+    print("авто-поворот: нейросеть отключена (SUSTECH_NO_TF=1), поворот по геометрии точек")
+else:
+    try:
+        import tensorflow as tf
+        util.config_gpu()
+        rotation_model = tf.keras.models.load_model(model_file)
+        print("авто-поворот: нейросеть загружена")
+    except Exception as e:
+        rotation_model = None
+        print("авто-поворот: TensorFlow или модель недоступны, поворот по геометрии точек. Причина:", str(e)[:200])
 
-NUM_POINT=512
 
 def sample_one_obj(points, num):
     if points.shape[0] < NUM_POINT:
-        return np.concatenate([points, np.zeros((NUM_POINT-points.shape[0], 3), dtype=np.float32)], axis=0)
+        return np.concatenate([points, np.zeros((NUM_POINT - points.shape[0], 3), dtype=np.float32)], axis=0)
     else:
         idx = np.arange(points.shape[0])
         np.random.shuffle(idx)
         return points[idx[0:num]]
 
+
+def yaw_from_points(points):
+    """
+    Угол (рад) объекта в плане без нейросети: L-shape fitting по критерию прижатости
+    (Zhang et al., 2017). Перебираем угол 0..90 градусов, для каждого считаем, насколько точки
+    прижаты к сторонам описанного прямоугольника, берём лучший и уточняем до 0.1 градуса.
+    Возвращаем направление длинной стороны.
+    """
+    p = np.asarray(points, dtype=np.float64).reshape(-1, 3)
+    if p.shape[0] < 3:
+        return 0.0
+    above = p[p[:, 2] > p[:, 2].min() + 0.3]        # убираем слой земли, если он попал в выделение
+    if above.shape[0] >= 10:
+        p = above
+    xy = p[:, :2]
+    if xy.shape[0] > 1500:
+        xy = xy[np.random.default_rng(0).choice(xy.shape[0], 1500, replace=False)]
+    x, y = xy[:, 0], xy[:, 1]
+    d0 = 0.05                                          # ближе 5 см считаем "на стороне"
+
+    def closeness(theta):
+        c, s = math.cos(theta), math.sin(theta)
+        u = x * c + y * s
+        v = -x * s + y * c
+        d1 = np.minimum(u.max() - u, u - u.min())
+        d2 = np.minimum(v.max() - v, v - v.min())
+        d = np.maximum(np.minimum(d1, d2), d0)
+        return float(np.sum(1.0 / d))
+
+    best_t, best_s = 0.0, -1.0
+    for deg in range(0, 90):
+        t = math.radians(deg)
+        sc = closeness(t)
+        if sc > best_s:
+            best_t, best_s = t, sc
+    for dd in np.arange(-1.0, 1.01, 0.1):               # уточнение вокруг лучшего
+        t = best_t + math.radians(dd)
+        sc = closeness(t)
+        if sc > best_s:
+            best_t, best_s = t, sc
+    c, s = math.cos(best_t), math.sin(best_t)
+    u = x * c + y * s
+    v = -x * s + y * c
+    yaw = best_t if (u.max() - u.min()) >= (v.max() - v.min()) else best_t + math.pi / 2
+    return float(math.atan2(math.sin(yaw), math.cos(yaw)))
+
+
 def predict_yaw(points):
-    points = np.array(points).reshape((-1,3))
+    points = np.array(points, dtype=np.float32).reshape((-1, 3))
+    if rotation_model is None:
+        return [0, 0, yaw_from_points(points)]
     input_data = np.stack([x for x in map(lambda x: sample_one_obj(points, NUM_POINT), range(RESAMPLE_NUM))], axis=0)
-    pred_val = rotation_model.predict(input_data)
+    pred_val = rotation_model.predict(input_data, verbose=0)
     pred_cls = np.argmax(pred_val, axis=-1)
-    print(pred_cls)
-    
-    ret = (pred_cls[0]*3+1.5)*np.pi/180.
-    ret =[0,0,ret]
-    print(ret)
+    ret = (pred_cls[0] * 3 + 1.5) * np.pi / 180.
+    return [0, 0, float(ret)]
 
-    return ret
 
-# warmup the model
-predict_yaw(np.random.random([1000,3]))
+if rotation_model is not None:
+    predict_yaw(np.random.random([1000, 3]))        # прогрев модели
+
 
 if False:
     # weights_path = "../DeepAnnotate/da_rp_weights.h5"

@@ -63,3 +63,11 @@
   в папке программы, обновляет пакеты Python, напоминает про Ctrl+F5. tools/findpy.bat: единый поиск Python
   для всех bat-файлов (папка python портативной версии, затем venv, затем .venv из инструкции куратора).
   Все bat-файлы в репозитории - CRLF (с LF cmd теряет позицию в файле после chcp 65001).
+- Портативная версия: tools/make_portable.py собирает dist/SUSTechPOINTS-portable.zip со встроенным
+  Python 3.10 (embeddable), пакетами точных версий из tools/portable_constraints.txt, моделью и примером
+  сцены. start.bat в корне запускает программу (через run.bat и findpy). Обновляется тем же пакетом обновления.
+- TensorFlow необязателен. algos/pre_annotate.py: если TensorFlow или модель недоступны (или задано
+  SUSTECH_NO_TF=1), сервер запускается, а поворот новой коробки считается по геометрии точек
+  (L-shape fitting по критерию прижатости, направление длинной стороны). С TensorFlow - нейросеть как раньше.
+  install_tensorflow.bat ставит TensorFlow в текущую копию; tools/make_tf_addon.py собирает архив-дополнение
+  SUSTechPOINTS-tensorflow.zip из разницы полной и облегчённой портативных сборок.

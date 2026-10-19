@@ -1,8 +1,13 @@
-import tensorflow as tf
-
+# TensorFlow необязателен: без него авто-поворот считается по геометрии точек (см. pre_annotate.py)
+try:
+    import tensorflow as tf
+except Exception:
+    tf = None
 
 
 def config_gpu():
+    if tf is None:
+        return
     gpus = tf.config.experimental.list_physical_devices('GPU')
     if gpus:
         try:
