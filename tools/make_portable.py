@@ -5,29 +5,34 @@
 По умолчанию - облегчённая (без TensorFlow): dist/SUSTechPOINTS-portable.zip, папка dist/portable-lite/.
 Поворот новой коробки в ней считается по геометрии точек (algos/pre_annotate.py). Нейросеть можно
 добавить потом: install_tensorflow.bat или архив-дополнение SUSTechPOINTS-tensorflow.zip
-(собирается tools/make_tf_addon.py из разницы полной и облегчённой сборок).
+(tools/make_tf_addon.py).
 
 --full  - полная версия с TensorFlow: dist/SUSTechPOINTS-portable-full.zip, папка dist/portable/.
 
-Внутри архива папка SUSTechPOINTS: программа, встроенный Python 3.10 (embeddable с python.org),
-пакеты точных версий (tools/portable_constraints.txt), модель нейросети, пример сцены.
-Студент распаковывает архив и запускает start.bat: ничего устанавливать не нужно.
+Пакеты Python берутся из рабочего окружения venv проекта (тот же Python 3.10.11, те же проверенные
+версии): копируются файлы дистрибутивов по их RECORD. Для облегчённой версии исключаются
+дистрибутивы, которые нужны только TensorFlow (замыкание зависимостей по метаданным).
+Скачиваются только embeddable Python с python.org и get-pip.py (кешируются в dist/cache).
+--pip - вместо копирования ставить пакеты pip-ом из PyPI по requirement.txt и portable_constraints.txt.
 
-Запуск из корня проекта (нужен интернет при первой сборке):
-    venv\\Scripts\\python tools\\make_portable.py [--full] [--reuse-python] [--no-zip]
-    --reuse-python   не пересобирать папку python, если она уже есть (быстро после правок кода)
-    --no-zip         собрать папку, архив не делать (для проверки)
+Внутри архива папка SUSTechPOINTS: программа, встроенный Python, пакеты, модель, пример сцены.
+Студент распаковывает архив и запускает start.bat.
+
+Запуск из корня проекта:
+    venv\\Scripts\\python tools\\make_portable.py [--full] [--pip] [--reuse-python] [--no-zip]
 """
 import sys, shutil, subprocess, zipfile, pathlib, urllib.request, urllib.error, time, tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from make_update import program_files, tracked_files, read_for_package   # noqa: E402
+from venv_dists import VenvDists                                         # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
 CACHE = DIST / "cache"
 
 FULL = "--full" in sys.argv
+USE_PIP = "--pip" in sys.argv
 REUSE_PY = "--reuse-python" in sys.argv
 NO_ZIP = "--no-zip" in sys.argv
 
@@ -38,8 +43,16 @@ PY_VER = "3.10.11"
 EMBED_URL = f"https://www.python.org/ftp/python/{PY_VER}/python-{PY_VER}-embed-amd64.zip"
 GETPIP_URLS = ["https://bootstrap.pypa.io/pip/3.10/get-pip.py", "https://bootstrap.pypa.io/pip/get-pip.py"]
 
+# Пути встроенного Python (файл python310._pth): его папка, корень программы ("..": там algos/ и tools/),
+# site-packages. Без ".." изолированный режим embeddable Python не находит модули программы.
+PTH_LINES = ["python310.zip", ".", "..", "Lib\\site-packages", "import site"]
+
 
 def log(msg): print(time.strftime("%H:%M:%S"), msg, flush=True)
+
+
+def write_pth(pydir: pathlib.Path):
+    next(pydir.glob("python*._pth")).write_text("\n".join(PTH_LINES) + "\n", encoding="ascii")
 
 
 def download(url: str, dest: pathlib.Path) -> bool:
@@ -68,7 +81,6 @@ def run(cmd, **kw):
 
 
 def requirements_file() -> pathlib.Path:
-    """Полная сборка - requirement.txt как есть; облегчённая - без tensorflow."""
     src = ROOT / "requirement.txt"
     if FULL: return src
     lines = [l for l in src.read_text(encoding="utf-8").splitlines() if not l.strip().lower().startswith("tensorflow")]
@@ -77,10 +89,26 @@ def requirements_file() -> pathlib.Path:
     return tmp
 
 
+def install_packages(py: pathlib.Path, pydir: pathlib.Path):
+    sp = pydir / "Lib" / "site-packages"
+    if USE_PIP:
+        log("ставлю пакеты pip-ом" + (" (TensorFlow ~500 МБ, подождите)" if FULL else " (без TensorFlow)"))
+        run([py, "-m", "pip", "install", "-q", "--no-warn-script-location", "--disable-pip-version-check",
+             "-r", requirements_file(), "-c", ROOT / "tools" / "portable_constraints.txt"])
+        run([py, "-m", "pip", "install", "-q", "--no-warn-script-location", "--disable-pip-version-check", "markdown"])
+        return
+    vd = VenvDists(ROOT / "venv")
+    names = vd.all_names() if FULL else vd.lite_names()
+    log(f"копирую пакеты из venv: {len(names)} дистрибутивов" + ("" if FULL else " (без TensorFlow и его зависимостей)"))
+    n, size = vd.copy(names, sp)
+    log(f"  скопировано файлов: {n}, {size // 1048576} МБ")
+
+
 def build_python():
     pydir = STAGE / "python"
     sp = pydir / "Lib" / "site-packages"
     if REUSE_PY and (pydir / "python.exe").exists() and (sp / "cherrypy").exists() and (not FULL or (sp / "tensorflow").exists()):
+        write_pth(pydir)
         log("python: использую уже собранную папку"); return
     if pydir.exists(): shutil.rmtree(pydir)
     CACHE.mkdir(parents=True, exist_ok=True)
@@ -88,23 +116,18 @@ def build_python():
     if not download(EMBED_URL, embed): sys.exit("не удалось скачать embeddable Python")
     log("распаковываю Python")
     with zipfile.ZipFile(embed) as z: z.extractall(pydir)
-    # разрешаем site-packages: иначе embeddable Python не видит установленные пакеты
-    pth = next(pydir.glob("python*._pth"))
-    pth.write_text("python310.zip\n.\nLib\\site-packages\nimport site\n", encoding="ascii")
+    write_pth(pydir)
     getpip = CACHE / "get-pip.py"
     if not any(download(u, getpip) for u in GETPIP_URLS): sys.exit("не удалось скачать get-pip.py")
     py = pydir / "python.exe"
     log("ставлю pip")
     run([py, getpip, "--no-warn-script-location", "-q"])
-    log("ставлю пакеты" + (" (TensorFlow ~500 МБ, подождите)" if FULL else " (без TensorFlow)"))
-    run([py, "-m", "pip", "install", "-q", "--no-warn-script-location", "--disable-pip-version-check",
-         "-r", requirements_file(), "-c", ROOT / "tools" / "portable_constraints.txt"])
-    run([py, "-m", "pip", "install", "-q", "--no-warn-script-location", "--disable-pip-version-check", "markdown"])
+    install_packages(py, pydir)
     for p in pydir.rglob("__pycache__"): shutil.rmtree(p, ignore_errors=True)
     check = "import tensorflow as tf, cherrypy, scipy, numpy; print('tf', tf.__version__, 'numpy', numpy.__version__)" if FULL \
         else "import cherrypy, scipy, numpy; print('numpy', numpy.__version__, 'scipy', scipy.__version__)"
     r = run([py, "-c", check], cwd=STAGE)
-    log(f"проверка импорта: {r.stdout.strip()}")
+    log(f"проверка импорта: {r.stdout.strip().splitlines()[-1]}")
 
 
 def copy_program():
@@ -120,7 +143,6 @@ def copy_program():
     for p in STAGE.rglob("__pycache__"):
         if "python" not in p.parts: shutil.rmtree(p, ignore_errors=True)
     log(f"  файлов программы: {len(files)}, моделей: {len(models)}")
-    # сервер должен подниматься в этой папке: импортируем модуль авто-поворота встроенным Python
     r = run([STAGE / "python" / "python.exe", "-c", "from algos import pre_annotate; print('tf' if pre_annotate.rotation_model is not None else 'geometry')"], cwd=STAGE)
     log(f"  авто-поворот в сборке: {r.stdout.strip().splitlines()[-1]}")
 
@@ -140,7 +162,7 @@ def main():
     log(("ПОЛНАЯ" if FULL else "ОБЛЕГЧЁННАЯ") + f" сборка -> {STAGE.relative_to(ROOT)}")
     STAGE.mkdir(parents=True, exist_ok=True)
     build_python()
-    for child in STAGE.iterdir():            # файлы программы кладём заново при каждой сборке
+    for child in STAGE.iterdir():
         if child.name != "python": shutil.rmtree(child) if child.is_dir() else child.unlink()
     copy_program()
     size = sum(p.stat().st_size for p in STAGE.rglob("*") if p.is_file())
