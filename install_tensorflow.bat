@@ -6,7 +6,7 @@ echo  Установка нейросети авто-поворота (TensorFlo
 echo  Нужна только для авто-поворота техники; для инфраструктуры программа работает и без неё.
 echo  Скачивается около 500 МБ, нужен интернет. Ничего в системе не меняется.
 echo.
-call toolsindpy.bat || exit /b 1
+call "%~dp0tools\findpy.bat" || exit /b 1
 %PY% -m pip install --disable-pip-version-check --no-warn-script-location -c tools\portable_constraints.txt tensorflow==2.12.0
 if errorlevel 1 (
     echo.

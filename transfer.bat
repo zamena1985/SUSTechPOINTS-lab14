@@ -4,6 +4,6 @@ rem Перед запуском сохраните разметку (Ctrl+S), п
 rem Пример: transfer.bat --frames 76-78 --ref 76
 cd /d "%~dp0"
 chcp 65001 >nul
-call toolsindpy.bat || exit /b 1
+call "%~dp0tools\findpy.bat" || exit /b 1
 %PY% tools\infra_transfer.py %*
 pause

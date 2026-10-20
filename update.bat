@@ -12,7 +12,7 @@ if not exist main.py (
     pause
     exit /b 1
 )
-call tools\findpy.bat || exit /b 1
+call "%~dp0tools\findpy.bat" || exit /b 1
 if "%~1"=="--no-pip" goto done
 if exist "python\python.exe" goto done
 echo  Проверяю пакеты Python, это может занять минуту...
