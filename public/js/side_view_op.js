@@ -443,7 +443,7 @@ class ProjectiveView{
         // viewport width/height is position-irrelavent
         // so x and y is relative value.
         var x = viewport.width/2 + (viewport.pan ? viewport.pan.x : 0);
-        var y = viewport.height/2 - (viewport.pan ? viewport.pan.y : 0);
+        var y = viewport.height/2 + (viewport.pan ? viewport.pan.y : 0);   // знак: коробка и рамка должны ехать в одну сторону
     
         var left = x-width/2;
         var right = x+width/2;
