@@ -1,15 +1,15 @@
 import * as THREE from './lib/three.module.js';
 
-import {ViewManager} from "./view.js?v=202610141215";
-import {FastToolBox, FloatLabelManager} from "./floatlabel.js?v=202610141215";
+import {ViewManager} from "./view.js?v=202610211221";
+import {FastToolBox, FloatLabelManager} from "./floatlabel.js?v=202610211221";
 import {Mouse} from "./mouse.js";
-import {BoxEditor, BoxEditorManager} from "./box_editor.js?v=202610141215";
+import {BoxEditor, BoxEditorManager} from "./box_editor.js?v=202610211221";
 import {ImageContextManager} from "./image.js";
 import {globalObjectCategory} from "./obj_cfg.js";
 
 import {objIdManager} from "./obj_id_list.js";
 import {Header} from "./header.js";
-import {BoxOp} from './box_op.js?v=202610141215';
+import {BoxOp} from './box_op.js?v=202610211221';
 import {AutoAdjust} from "./auto-adjust.js";
 import {PlayControl} from "./play.js";
 import {reloadWorldList, saveWorldList} from "./save.js";
@@ -1048,24 +1048,24 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
     }
     this.ensurePreloaded = function()
     {
-        let worldList = this.data.worldList.filter(w=>w.frameInfo.scene == this.data.world.frameInfo.scene);
-        worldList = worldList.sort((a,b)=>a.frameInfo.frame_index - b.frameInfo.frame_index);
-
+        // Для пакетного режима нужны только кадры его окна вокруг текущего (batchModeInstNumber),
+        // а не вся сцена: в памяти держится MaxWorldNumber кадров, и прежнее условие
+        // "загружена вся сцена или больше 60 кадров" для длинных сцен не выполнялось никогда.
+        let scene = this.data.world.frameInfo.scene;
         let meta = this.data.get_current_world_scene_meta();
-
-        
-        let allLoaded = worldList.map(w=>w.preloaded()).reduce((a,b)=>a && b, true);
-
-        if ((worldList.length < meta.frames.length && worldList.length <= 60) || (!allLoaded))
+        let center = this.data.world.frameInfo.frame_index;
+        let size = (this.boxEditorManager && this.boxEditorManager.batchSize) || this.editorCfg.batchModeInstNumber || 20;
+        let start = Math.max(0, center - Math.floor(size / 2));
+        let end = Math.min(meta.frames.length, start + size);
+        let need = meta.frames.slice(start, end);
+        let worlds = this.data.worldList.filter(w => w.frameInfo.scene == scene);
+        let allLoaded = need.every(f => { let w = worlds.find(x => x.frameInfo.frame == f); return w && w.preloaded(); });
+        if (!allLoaded)
         {
-            this.data.forcePreloadScene(this.data.world.frameInfo.scene, this.data.world);
-
-            this.infoBox.show("Notice", 
-                `Loading scene in background. Please try again later.`);
+            this.data.forcePreloadScene(scene, this.data.world);
+            this.infoBox.show("Notice", `Loading scene in background. Please try again later.`);
             return false;
         }
-
-        
         return true;
     }
 

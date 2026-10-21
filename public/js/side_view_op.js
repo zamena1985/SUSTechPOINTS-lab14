@@ -111,7 +111,9 @@ class ProjectiveView{
         // Слушаем на document в фазе захвата: ручки SVG и родительские меню не успевают перехватить.
         if (!ProjectiveView._panInstalled) {
             ProjectiveView._panInstalled = true;
-            const owner = el => { let m = el && el.closest && el.closest(".view-manipulator"); return m && m._projView; };
+            // В пакетном режиме (#batch-box-editor) правая кнопка нужна его контекстному меню: сдвиг вида там отключён.
+            const inBatch = el => !!(el && el.closest && el.closest("#batch-box-editor"));
+            const owner = el => { if (inBatch(el)) return null; let m = el && el.closest && el.closest(".view-manipulator"); return m && m._projView; };
             let drag = null, lastRightUp = 0;
             const block = e => { if (owner(e.target)) { e.preventDefault(); e.stopPropagation(); return false; } };
             // блокируем меню браузера на всех уровнях: разные браузеры (Chrome, Comet, Edge) слушают разное
@@ -142,7 +144,7 @@ class ProjectiveView{
             }, true);
         }
         ui._projView = this;
-        ui.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); return false; };
+        ui.oncontextmenu = e => { if (e.target && e.target.closest && e.target.closest("#batch-box-editor")) return; e.preventDefault(); e.stopPropagation(); return false; };
         if (this.svg) this.svg.oncontextmenu = ui.oncontextmenu;
 
         this.install_edge_hanler('left', this.handles.left,   this.lines,   {x:-1,y:0});
