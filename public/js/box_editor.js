@@ -1,10 +1,10 @@
 
-import {ProjectiveViewOps}  from "./side_view_op.js?v=202610211243"
+import {ProjectiveViewOps}  from "./side_view_op.js?v=202610211300"
 import {BoxImageContext} from "./image.js";
 import {saveWorldList, reloadWorldList} from "./save.js"
 import {objIdManager} from "./obj_id_list.js"
 import { globalKeyDownManager } from "./keydown_manager.js";
-import{ml} from "./ml.js?v=202610211243";
+import{ml} from "./ml.js?v=202610211300";
 import { BooleanKeyframeTrack } from "./lib/three.module.js";
 import { checkScene } from "./error_check.js";
 import { logger } from "./log.js";
@@ -390,7 +390,8 @@ function BoxEditor(parentUi, boxEditorManager, viewManager, cfg, boxOp,
                         this.boxEditorManager.onSubViewsResize(rect.width, rect.height);
                     }
                     else{
-                        this.boxView.render();
+                        // размер панели изменился: пересчитать диапазон камер окошек и рамку-манипулятор
+                        if (this.box) this.update(); else this.boxView.render();
                     }
                 
                     //save
