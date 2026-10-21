@@ -28,6 +28,7 @@ echo  Программа: !TARGET!
 
 rem ---------- 2. откуда брать файлы обновления ----------
 set "SRC="
+if exist "%SELF%files\main.py" set "SRC=%SELF%files"
 if exist "%SELF%main.py" if not exist "%SELF%python\python.exe" if not exist "%SELF%venv\Scripts\python.exe" if not exist "%SELF%.venv\Scripts\python.exe" set "SRC=%SELF%."
 if defined SRC (
     echo  Файлы обновления: распакованный пакет рядом с update.bat
@@ -54,6 +55,7 @@ if defined SRC (
         echo  Не удалось распаковать архив обновления.
         goto :fail
     )
+    if exist "!SRC!\files\main.py" set "SRC=!SRC!\files"
 )
 if not exist "!SRC!\main.py" (
     echo  В пакете обновления нет файлов программы.

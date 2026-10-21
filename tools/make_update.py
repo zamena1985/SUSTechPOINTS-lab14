@@ -49,11 +49,14 @@ def main():
     files = program_files(ROOT)
     OUT.parent.mkdir(exist_ok=True)
     total = 0
+    # В корне архива только update.bat, файлы программы во вложенной папке files/:
+    # после распаковки студент видит один запускаемый файл и не путает пакет с программой.
     with zipfile.ZipFile(OUT, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for f in files:
             data = read_for_package(ROOT, f)
-            z.writestr(zipfile.ZipInfo(f, date_time=time.localtime()[:6]), data, compress_type=zipfile.ZIP_DEFLATED)
+            z.writestr(zipfile.ZipInfo("files/" + f, date_time=time.localtime()[:6]), data, compress_type=zipfile.ZIP_DEFLATED)
             total += len(data)
+        z.writestr(zipfile.ZipInfo("update.bat", date_time=time.localtime()[:6]), read_for_package(ROOT, "update.bat"), compress_type=zipfile.ZIP_DEFLATED)
     print(f"файлов: {len(files)}, распаковано {total // 1024} КБ, архив {OUT.stat().st_size // 1024} КБ")
     print(f"готово: {OUT.relative_to(ROOT)}")
 
