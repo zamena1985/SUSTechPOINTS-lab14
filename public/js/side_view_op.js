@@ -1247,6 +1247,36 @@ class ProjectiveViewOps{
                                             default_on_focus,
                                             default_on_del,
                                             this.isActive.bind(this));
+        // Выбор соседней коробки щелчком в виде сверху: щелчок по пустому месту окошка (не по ручкам рамки)
+        // переводится через камеру окошка в мировую точку; выбирается самая маленькая коробка, содержащая её.
+        {
+            const zUi = scope.ui.querySelector("#z-view-manipulator");
+            let press = null;
+            zUi.addEventListener("mousedown", e => { if (e.button === 0) press = {x: e.clientX, y: e.clientY}; }, true);
+            zUi.addEventListener("click", e => {
+                const p = press; press = null;
+                if (e.button !== 0 || !p || Math.abs(e.clientX - p.x) + Math.abs(e.clientY - p.y) > 3) return;
+                if (e.target.closest && e.target.closest("#batch-box-editor")) return;
+                const tag = (e.target.tagName || "").toLowerCase();
+                if (e.target !== zUi && tag !== "svg") return;
+                if (!window.editor || !scope.box) return;
+                const v = scope.views[0], r = zUi.getBoundingClientRect();
+                const pt = new Vector3(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1, 0.5);
+                if (v.cameraContainer) v.cameraContainer.updateMatrixWorld(true);
+                v.camera.updateMatrixWorld(true); v.camera.updateProjectionMatrix();
+                pt.unproject(v.camera);
+                let best = null, bestArea = Infinity;
+                for (const b of window.editor.data.world.annotation.boxes) {
+                    b.updateMatrixWorld(true);
+                    const l = b.worldToLocal(pt.clone());
+                    if (Math.abs(l.x) <= 0.5 && Math.abs(l.y) <= 0.5) {
+                        const area = b.scale.x * b.scale.y;
+                        if (area < bestArea) { best = b; bestArea = area; }
+                    }
+                }
+                if (best && best !== scope.box) window.editor.selectBox(best);
+            });
+        }
         this.z_view_handle.on_pan = on_z_pan;
 
 
