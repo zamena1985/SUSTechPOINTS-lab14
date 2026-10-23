@@ -1,15 +1,15 @@
 import * as THREE from './lib/three.module.js';
 
-import {ViewManager} from "./view.js?v=202610211300";
-import {FastToolBox, FloatLabelManager} from "./floatlabel.js?v=202610211300";
+import {ViewManager} from "./view.js?v=202610231130";
+import {FastToolBox, FloatLabelManager} from "./floatlabel.js?v=202610231130";
 import {Mouse} from "./mouse.js";
-import {BoxEditor, BoxEditorManager} from "./box_editor.js?v=202610211300";
+import {BoxEditor, BoxEditorManager} from "./box_editor.js?v=202610231130";
 import {ImageContextManager} from "./image.js";
 import {globalObjectCategory} from "./obj_cfg.js";
 
 import {objIdManager} from "./obj_id_list.js";
 import {Header} from "./header.js";
-import {BoxOp} from './box_op.js?v=202610211300';
+import {BoxOp} from './box_op.js?v=202610231130';
 import {AutoAdjust} from "./auto-adjust.js";
 import {PlayControl} from "./play.js";
 import {reloadWorldList, saveWorldList} from "./save.js";
@@ -122,16 +122,23 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
         {
             const rc = new THREE.Raycaster(); rc.params.Points = {threshold: 0.35};
             const mv = this.viewManager.mainView;
+            // кэш: подряд идущие щелчки колеса в одной точке экрана не ищут точку заново
+            // (поиск по всему облаку - десятки миллисекунд, без кэша колесо "залипало")
+            let pickCache = {key: null, t: 0, p: null};
             mv.orbit.pickPoint = (cx, cy) => {
                 const w = this.data && this.data.world; if (!w || !w.lidar || !w.lidar.points) return null;
+                const key = w.frameInfo.frame + ":" + Math.round(cx / 4) + ":" + Math.round(cy / 4);
+                const now = performance.now();
+                if (pickCache.key === key && now - pickCache.t < 400) { pickCache.t = now; return pickCache.p; }
                 const r = this.container.getBoundingClientRect();
                 const ndc = new THREE.Vector2(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
                 rc.setFromCamera(ndc, mv.camera);
+                let p = null;
                 const hits = rc.intersectObject(w.lidar.points, false);
-                if (hits.length) { const h = hits[0].point; return {x: h.x, y: h.y, z: h.z}; }
-                const o = rc.ray.origin, d = rc.ray.direction; if (Math.abs(d.z) < 1e-6) return null;
-                const t = -o.z / d.z; if (t <= 0) return null;
-                return {x: o.x + d.x * t, y: o.y + d.y * t, z: 0};
+                if (hits.length) { const h = hits[0].point; p = {x: h.x, y: h.y, z: h.z}; }
+                else { const o = rc.ray.origin, d = rc.ray.direction; if (Math.abs(d.z) > 1e-6) { const t = -o.z / d.z; if (t > 0) p = {x: o.x + d.x * t, y: o.y + d.y * t, z: 0}; } }
+                pickCache = {key, t: now, p};
+                return p;
             };
         }
         

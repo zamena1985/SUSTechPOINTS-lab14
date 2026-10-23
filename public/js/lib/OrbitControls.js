@@ -602,29 +602,29 @@ class OrbitControls extends EventDispatcher {
 
 		function handleMouseWheel( event ) {
 
+			// Зум к курсору без смены направления взгляда: камера и цель вращения сдвигаются вдоль луча
+			// на точку под курсором в одной пропорции, поэтому точка под курсором остаётся под курсором,
+			// а карта не разворачивается. Без точки (курсор в пустоте) - обычный зум к цели.
+			let pick = null;
 			if ( scope.pickPoint ) {
-				try {
-					const p = scope.pickPoint( event.clientX, event.clientY );
-					scope._lastPick = p ? new Vector3( p.x, p.y, p.z ) : null;
-					if ( p && event.deltaY < 0 ) {
-						// цель вращения - к точке под курсором, камера остаётся на месте
-						const curDist = scope.object.position.distanceTo( scope.target );
-						const pickDist = scope.object.position.distanceTo( scope._lastPick );
-						if ( pickDist < curDist * 0.9 || pickDist > curDist * 1.5 ) {
-							scope.target.copy( scope._lastPick );
-						}
-					}
-				} catch ( e ) {}
+				try { const p = scope.pickPoint( event.clientX, event.clientY ); pick = p ? new Vector3( p.x, p.y, p.z ) : null; } catch ( e ) { pick = null; }
+				scope._lastPick = pick;
 			}
-
-			if ( event.deltaY < 0 ) {
-
-				dollyIn( getZoomScale() );
-
+			const f = getZoomScale();
+			if ( pick && scope.object.isPerspectiveCamera && event.deltaY !== 0 ) {
+				const factor = event.deltaY < 0 ? f : 1 / f;
+				const cam = scope.object.position, tgt = scope.target;
+				const dir = tgt.clone().sub( cam );
+				const newTargetDist = Math.max( scope.minDistance, Math.min( scope.maxDistance, dir.length() * factor ) );
+				if ( event.deltaY > 0 || cam.distanceTo( pick ) * factor >= scope.minDistance ) {
+					const off = cam.clone().sub( pick ).multiplyScalar( factor );   // смещение считаем ДО переноса камеры
+					cam.copy( pick ).add( off );
+					tgt.copy( cam ).add( dir.normalize().multiplyScalar( newTargetDist ) );
+				}
+			} else if ( event.deltaY < 0 ) {
+				dollyIn( f );
 			} else if ( event.deltaY > 0 ) {
-
-				dollyOut( getZoomScale() );
-
+				dollyOut( f );
 			}
 
 			scope.update();
