@@ -1,5 +1,5 @@
 import{Config} from "./config.js"
-import{Editor} from "./editor.js?v=202610231627"
+import{Editor} from "./editor.js?v=202610231718"
 import {Data} from './data.js'
 
 

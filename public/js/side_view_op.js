@@ -668,6 +668,14 @@ class ProjectiveView{
         };
     }
 
+    // Боковые окошки (вид сбоку и спереди): поворот мышью отключён. Q/E там поворачивают вокруг
+    // вертикали, а ручка поворота тянула тот же обработчик, и в боковом виде коробка "уходила не туда".
+    // Направление коробки меняется в верхнем окошке (вид сверху) или клавишами Q/E.
+    disableMouseRotation(){
+        if (this.lines.direction) this.lines.direction.style.display = "none";
+        if (this.handles.direction) this.handles.direction.style.display = "none";
+    }
+
     install_direction_handler(linename){
         var handle = this.ui.querySelector("#"+linename+"-handle");
         var line =  this.ui.querySelector("#"+linename);
@@ -1424,6 +1432,7 @@ class ProjectiveViewOps{
                                                     default_on_del,
                                                     this.isActive.bind(this));
         this.y_view_handle.on_pan = on_y_pan;
+        this.y_view_handle.disableMouseRotation();
 
 
         ///////////////////////////////////////////////////////////////////////////////////
@@ -1568,6 +1577,7 @@ class ProjectiveViewOps{
                                                     default_on_del,
                                                     this.isActive.bind(this));
         this.x_view_handle.on_pan = on_x_pan;
+        this.x_view_handle.disableMouseRotation();
 
     }  // end of constructor
 
