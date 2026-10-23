@@ -19,8 +19,10 @@ FILES = {
 total = 0
 for rel, pattern in FILES.items():
     p = ROOT / rel
-    text = p.read_text(encoding="utf-8")
+    with open(p, encoding="utf-8", newline="") as f:   # newline="" - концы строк не меняются (LF остаётся LF)
+        text = f.read()
     text, n = re.subn(pattern, r"\1?v=" + V, text)
     total += n
-    p.write_text(text, encoding="utf-8")
+    with open(p, "w", encoding="utf-8", newline="") as f:
+        f.write(text)
 print("версия", V, "замен", total)

@@ -1,15 +1,15 @@
 import * as THREE from './lib/three.module.js';
 
-import {ViewManager} from "./view.js?v=202610231130";
-import {FastToolBox, FloatLabelManager} from "./floatlabel.js?v=202610231130";
+import {ViewManager} from "./view.js?v=202610231607";
+import {FastToolBox, FloatLabelManager} from "./floatlabel.js?v=202610231607";
 import {Mouse} from "./mouse.js";
-import {BoxEditor, BoxEditorManager} from "./box_editor.js?v=202610231130";
+import {BoxEditor, BoxEditorManager} from "./box_editor.js?v=202610231607";
 import {ImageContextManager} from "./image.js";
 import {globalObjectCategory} from "./obj_cfg.js";
 
 import {objIdManager} from "./obj_id_list.js";
 import {Header} from "./header.js";
-import {BoxOp} from './box_op.js?v=202610231130';
+import {BoxOp} from './box_op.js?v=202610231607';
 import {AutoAdjust} from "./auto-adjust.js";
 import {PlayControl} from "./play.js";
 import {reloadWorldList, saveWorldList} from "./save.js";
@@ -1636,15 +1636,19 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
                 }
 
                 if ( intersects.length > 0 ) {
-                    //var object = intersects[ 0 ].object;
                     var object = intersects[ 0 ].object;
-                    if ( object.userData.object !== undefined ) {
-                        // helper
-                        this.selectBox( object.userData.object );
+                    let hit = (object.userData.object !== undefined) ? object.userData.object : object;
+                    if (event && event.shiftKey) {
+                        // Shift+щелчок: добавить/убрать коробку из группы
+                        let wasInGroup = this.group.includes(hit);
+                        this.groupToggle(hit);
+                        if (!wasInGroup && this.selected_box !== hit) this.selectBox(hit);   // убранная из группы коробка выбор не меняет
                     } else {
-                        this.selectBox( object );
+                        this.groupClear();
+                        this.selectBox(hit);
                     }
                 } else {
+                    if (!(event && event.shiftKey)) this.groupClear();
                     this.unselectBox(null);
                 }
 
@@ -1732,7 +1736,8 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
                 }
 
                 this.selected_box.material.color = new THREE.Color(parseInt("0x"+globalObjectCategory.get_obj_cfg_by_type(this.selected_box.obj_type).color.slice(1)));
-                this.selected_box.material.opacity = this.data.cfg.box_opacity;                
+                this.selected_box.material.opacity = this.data.cfg.box_opacity;
+                if (this.group && this.group.includes(this.selected_box)) this.selected_box.material.color.setRGB(1, 1, 1);   // коробка группы остаётся белой                
                 //this.floatLabelManager.unselect_box(this.selected_box.obj_local_id);
                 this.fastToolBox.hide();
                 this.imageContextManager.boxes_manager.onBoxUnselected(this.selected_box.obj_local_id, this.selected_box.obj_type);
@@ -1940,6 +1945,125 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
     // класс новой коробки при выделении области (null = угадывать по размеру)
     this.DEFAULT_NEW_BOX_TYPE = "Infrastructure";
 
+    // ---------- группа коробок: Shift+щелчок, J дублировать, W/A/S/D/Q/E двигать, Delete, Esc ----------
+    this.group = [];
+    this._undoMute = 0;
+    this.groupUpdateUi = function(){
+        let el = document.querySelector("#group-count"); if (!el) return;
+        el.style.display = this.group.length ? "inline" : "none";
+        el.textContent = "группа: " + this.group.length;
+    };
+    this.groupHighlight = function(box, on){
+        if (!box || !box.material) return;
+        this.groupHook();
+        if (box === this.selected_box) { this.boxOp.highlightBox(box); return; }   // выбранная всегда сиреневая
+        if (on) box.material.color.setRGB(1, 1, 1); else if (box.world) box.world.annotation.color_box(box);
+    };
+    // снятие выделения красит коробку в цвет класса - для коробки из группы возвращаем белый
+    this.groupHook = function(){
+        if (!this.boxOp || this.boxOp._groupHooked) return;
+        let orig = this.boxOp.unhighlightBox.bind(this.boxOp);
+        this.boxOp.unhighlightBox = (box) => { orig(box); if (box && this.group.includes(box) && box.material) box.material.color.setRGB(1, 1, 1); };
+        this.boxOp._groupHooked = true;
+    };
+    this.groupValid = function(){
+        let boxes = this.data.world ? this.data.world.annotation.boxes : [];
+        this.group = this.group.filter(b => boxes.includes(b));
+        return this.group;
+    };
+    this.groupToggle = function(box){
+        if (!box) return;
+        this.groupValid();
+        let i = this.group.indexOf(box);
+        if (i >= 0) { this.group.splice(i, 1); this.groupHighlight(box, false); }
+        else { this.group.push(box); this.groupHighlight(box, true); }
+        this.groupUpdateUi(); this.render();
+    };
+    this.groupDrop = function(box){
+        let i = this.group.indexOf(box); if (i >= 0) { this.group.splice(i, 1); this.groupUpdateUi(); }
+    };
+    this.groupClear = function(){
+        if (!this.group.length) return;
+        this.group.forEach(b => this.groupHighlight(b, false));
+        this.group = []; this.groupUpdateUi(); this.render();
+    };
+    this.groupApply = function(fn){
+        let g = this.groupValid(); if (!g.length) return false;
+        this.undoPush(this.data.world);
+        fn(g);
+        this._undoMute++;   // on_box_changed сам пишет снимки отмены - для группы хватает одного
+        try { g.forEach(b => { this.on_box_changed(b); this.save_box_info(b); }); } finally { this._undoMute--; }
+        this.render();
+        return true;
+    };
+    this.groupTranslate = function(axis, delta){
+        // все коробки едут на один вектор; ось берётся у опорной (выбранной) коробки
+        let anchor = (this.selected_box && this.group.includes(this.selected_box)) ? this.selected_box : this.group[0];
+        let r = anchor.rotation.z, c = Math.cos(r), sn = Math.sin(r);
+        let v = axis === "x" ? {x: c * delta, y: sn * delta, z: 0} : axis === "y" ? {x: -sn * delta, y: c * delta, z: 0} : {x: 0, y: 0, z: delta};
+        this.groupApply(g => g.forEach(b => { b.position.x += v.x; b.position.y += v.y; b.position.z += v.z; }));
+    };
+    this.groupRotate = function(theta){
+        this.groupApply(g => {
+            let cx = 0, cy = 0; g.forEach(b => { cx += b.position.x; cy += b.position.y; }); cx /= g.length; cy /= g.length;
+            let c = Math.cos(theta), sn = Math.sin(theta);
+            g.forEach(b => {
+                let dx = b.position.x - cx, dy = b.position.y - cy;
+                b.position.x = cx + dx * c - dy * sn; b.position.y = cy + dx * sn + dy * c;
+                b.rotation.z += theta;
+            });
+        });
+    };
+    this.groupDelete = function(){
+        let g = this.groupValid().slice(); if (!g.length) return;
+        this.undoPush(this.data.world);
+        this._undoMute++;
+        try { g.forEach(b => this.remove_box(b, false)); } finally { this._undoMute--; }
+        this.groupClear(); this.groupUpdateUi(); this.header.updateModifiedStatus(); this.render();
+    };
+    this.groupDuplicate = function(){
+        let g = this.groupValid().slice();
+        if (!g.length && this.selected_box) g = [this.selected_box];
+        if (!g.length) return;
+        this.undoPush(this.data.world);
+        // копия ставится правее по экрану на 1.5 м, чтобы не слиться с оригиналом
+        let cam = this.viewManager.mainView.camera;
+        let right = new THREE.Vector3(1, 0, 0).applyQuaternion(cam.quaternion); right.z = 0;
+        if (right.length() < 1e-3) right.set(1, 0, 0); right.normalize().multiplyScalar(1.5);
+        let created = [];
+        this._undoMute++;
+        try { g.forEach(b => {
+            let id = objIdManager.generateNewUniqueId();
+            objIdManager.addObject({category: b.obj_type, id: id});
+            let nb = this.add_box({x: b.position.x + right.x, y: b.position.y + right.y, z: b.position.z},
+                                  {x: b.scale.x, y: b.scale.y, z: b.scale.z},
+                                  {x: b.rotation.x, y: b.rotation.y, z: b.rotation.z}, b.obj_type, id);
+            if (nb) { if (b.obj_attr) nb.obj_attr = b.obj_attr; created.push(nb); }
+        }); } finally { this._undoMute--; }
+        this.groupClear();
+        created.forEach(b => { this.group.push(b); this.groupHighlight(b, true); });
+        if (created.length) this.selectBox(created[0]);
+        this.groupUpdateUi(); this.header.updateModifiedStatus(); this.render();
+    };
+    this.handleGroupKey = function(keyName, ev){
+        let be = document.querySelector("#batch-box-editor");
+        if (be && be.style.display !== "none") return false;   // в пакетном режиме группа не работает
+        let anchor = (this.selected_box && this.group.includes(this.selected_box)) ? this.selected_box : this.group[0];
+        let step = anchor ? Math.max(this.editorCfg.moveStep * Math.max(anchor.scale.x, anchor.scale.y), 0.05) : 0.1;
+        switch (keyName) {
+            case "w": this.groupTranslate("x", step); return true;
+            case "s": this.groupTranslate("x", -step); return true;
+            case "a": this.groupTranslate("y", step); return true;
+            case "d": this.groupTranslate("y", -step); return true;
+            case "q": this.groupRotate(this.editorCfg.rotateStep); return true;
+            case "e": this.groupRotate(-this.editorCfg.rotateStep); return true;
+            case "j": this.groupDuplicate(); return true;
+            case "Delete": this.groupDelete(); return true;
+            case "Escape": this.groupClear(); return false;
+        }
+        return false;
+    };
+
     // ---------- отмена / повтор (Ctrl+Z / Ctrl+Y) ----------
     // На каждый кадр - стек снимков разметки (JSON всех коробок). Снимок делается
     // ПЕРЕД каждым изменением; отмена = вернуть предыдущий снимок через reapplyAnnotation.
@@ -1977,6 +2101,7 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
         let st = this._undoStack(world);
         if (!st) return;
         if (this._undoApplying) return;            // не записывать сам откат
+        if (this._undoMute) return;                // групповая операция: один снимок на всё
         let snap = this._snapshot(world);
         let last = st.past[st.past.length - 1];
         if (last && JSON.stringify(last) === JSON.stringify(snap)) return;   // ничего не изменилось
@@ -1987,6 +2112,7 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
         this.undoRefreshUi();
     };
     this._undoApply = function(world, snap){
+        this.group = []; this.groupUpdateUi();
         this._undoApplying = true;
         try {
             let selId = this.selected_box ? this.selected_box.obj_track_id : null;
@@ -2180,6 +2306,7 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
         // (в русской раскладке Q даёт 'й', и 'q' не совпадало - клавиши "не работали")
         let keyName = ev.key;
         if (ev.code && /^Key[A-Z]$/.test(ev.code) && !ev.ctrlKey && !ev.metaKey) keyName = ev.code.slice(3).toLowerCase();
+        if (this.group && this.group.length && !ev.ctrlKey && !ev.metaKey && this.handleGroupKey(keyName, ev)) return;
         switch ( keyName ) {
             case '+':
             case '=':
@@ -2287,6 +2414,9 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
                 }
                 break;
 
+            case 'j':   // дублировать группу (или выбранную коробку)
+                this.groupDuplicate();
+                break;
             case 'h':   // подогнать коробку инфраструктуры по точкам
                 if (this.selected_box){
                     this.undoPush(this.selected_box.world);
@@ -2457,6 +2587,7 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
     this.on_load_world_finished= function(world){
 
         document.title = "SUSTech POINTS-" + world.frameInfo.scene;
+        if (this.groupClear) this.groupClear();
         // switch view positoin
         this.moveAxisHelper(world);
         this.moveRangeCircle(world);
@@ -2549,6 +2680,7 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
 
     this.remove_box = function(box, render=true){
         if (box && box.world) this.undoPush(box.world);
+        if (this.groupDrop) this.groupDrop(box);
         if (box === this.selected_box){
             this.unselectBox(null,true);
             this.unselectBox(null,true); //twice to safely unselect.
@@ -2633,7 +2765,7 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
     //box edited
     this.on_box_changed = function(box){
 
-        if (box && box.world && !this._undoApplying){
+        if (box && box.world && !this._undoApplying && !this._undoMute){
             // Перетаскивание мышью вызывает on_box_changed десятки раз за одно движение.
             // Считаем серию быстрых вызовов по одной коробке одним действием: снимок
             // "до" берём только в начале серии (пауза > UNDO_GESTURE_MS или другая коробка).
