@@ -1,15 +1,15 @@
 import * as THREE from './lib/three.module.js';
 
-import {ViewManager} from "./view.js?v=202610231607";
-import {FastToolBox, FloatLabelManager} from "./floatlabel.js?v=202610231607";
+import {ViewManager} from "./view.js?v=202610231627";
+import {FastToolBox, FloatLabelManager} from "./floatlabel.js?v=202610231627";
 import {Mouse} from "./mouse.js";
-import {BoxEditor, BoxEditorManager} from "./box_editor.js?v=202610231607";
+import {BoxEditor, BoxEditorManager} from "./box_editor.js?v=202610231627";
 import {ImageContextManager} from "./image.js";
 import {globalObjectCategory} from "./obj_cfg.js";
 
 import {objIdManager} from "./obj_id_list.js";
 import {Header} from "./header.js";
-import {BoxOp} from './box_op.js?v=202610231607';
+import {BoxOp} from './box_op.js?v=202610231627';
 import {AutoAdjust} from "./auto-adjust.js";
 import {PlayControl} from "./play.js";
 import {reloadWorldList, saveWorldList} from "./save.js";
@@ -2794,6 +2794,9 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
 
         this.header.update_box_info(box);
         //floatLabelManager.update_position(box, false);  don't update position, or the ui is annoying.
+        // подпись едет за коробкой (раньше вершины подписи не пересчитывались до смены кадра:
+        // после сдвига клавишами или группой подписи отставали от объектов)
+        this.floatLabelManager.update_position(box, true);
         
         box.world.annotation.setModified();
         
