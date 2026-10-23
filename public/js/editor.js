@@ -1,15 +1,15 @@
 import * as THREE from './lib/three.module.js';
 
-import {ViewManager} from "./view.js?v=202610231718";
-import {FastToolBox, FloatLabelManager} from "./floatlabel.js?v=202610231718";
+import {ViewManager} from "./view.js?v=202610231733";
+import {FastToolBox, FloatLabelManager} from "./floatlabel.js?v=202610231733";
 import {Mouse} from "./mouse.js";
-import {BoxEditor, BoxEditorManager} from "./box_editor.js?v=202610231718";
+import {BoxEditor, BoxEditorManager} from "./box_editor.js?v=202610231733";
 import {ImageContextManager} from "./image.js";
 import {globalObjectCategory} from "./obj_cfg.js";
 
 import {objIdManager} from "./obj_id_list.js";
 import {Header} from "./header.js";
-import {BoxOp} from './box_op.js?v=202610231718';
+import {BoxOp} from './box_op.js?v=202610231733';
 import {AutoAdjust} from "./auto-adjust.js";
 import {PlayControl} from "./play.js";
 import {reloadWorldList, saveWorldList} from "./save.js";

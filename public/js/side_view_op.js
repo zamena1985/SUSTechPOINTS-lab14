@@ -668,14 +668,6 @@ class ProjectiveView{
         };
     }
 
-    // Боковые окошки (вид сбоку и спереди): поворот мышью отключён. Q/E там поворачивают вокруг
-    // вертикали, а ручка поворота тянула тот же обработчик, и в боковом виде коробка "уходила не туда".
-    // Направление коробки меняется в верхнем окошке (вид сверху) или клавишами Q/E.
-    disableMouseRotation(){
-        if (this.lines.direction) this.lines.direction.style.display = "none";
-        if (this.handles.direction) this.handles.direction.style.display = "none";
-    }
-
     install_direction_handler(linename){
         var handle = this.ui.querySelector("#"+linename+"-handle");
         var line =  this.ui.querySelector("#"+linename);
@@ -767,7 +759,6 @@ class ProjectiveView{
             };
 
             svg.onmouseup = event=>{
-                if (window.editor && window.editor.undoEndGesture) window.editor.undoEndGesture();
                 svg.onmousemove = null;
                 svg.onmouseup=null;
 
@@ -778,12 +769,12 @@ class ProjectiveView{
 
                 this.ui.querySelector("#v-buttons").style.display="inherit";
 
-                if (theta == 0){
-                    return;
+                if (theta != 0){
+                    // в боковых окошках ручка наклоняет коробку (on_mouse_rotate), Q/E по-прежнему поворачивают вокруг вертикали
+                    (this.on_mouse_rotate || this.on_direction_changed)(-theta-Math.PI/2, event.ctrlKey);
                 }
-
-                this.on_direction_changed(-theta-Math.PI/2, event.ctrlKey);
-                
+                // конец движения - ПОСЛЕ применения поворота, иначе поворот записывался вторым шагом отмены
+                if (window.editor && window.editor.undoEndGesture) window.editor.undoEndGesture();
             };
 
             
@@ -1368,10 +1359,14 @@ class ProjectiveViewOps{
         }
 
         function on_y_direction_changed(theta, sticky){
-            // Q/E в боковом окошке: раньше наклоняли коробку вокруг горизонтальной оси
-            // (так "заваливались" стены). Для нашей разметки нужен только поворот вокруг вертикали.
+            // Q/E в боковом окошке поворачивают вокруг вертикали (раньше наклоняли - так "заваливались" стены).
             scope.boxOp.rotate_z(scope.box, theta, sticky);
             scope.on_box_changed(scope.box);
+        }
+
+        function on_y_tilt(theta, sticky){
+            // ручка направления мышью: наклон вперёд-назад (вокруг поперечной оси), нужен для труб на подъёме
+            scope.boxOp.change_rotation_y(scope.box, theta, sticky, scope.on_box_changed);
         }
 
 
@@ -1432,7 +1427,7 @@ class ProjectiveViewOps{
                                                     default_on_del,
                                                     this.isActive.bind(this));
         this.y_view_handle.on_pan = on_y_pan;
-        this.y_view_handle.disableMouseRotation();
+        this.y_view_handle.on_mouse_rotate = on_y_tilt;   // ручка мышью: наклон вперёд-назад, как в оригинале
 
 
         ///////////////////////////////////////////////////////////////////////////////////
@@ -1520,6 +1515,11 @@ class ProjectiveViewOps{
             scope.on_box_changed(scope.box);
         }
 
+        function on_x_tilt(theta, sticky){
+            // ручка направления мышью: наклон вбок (вокруг продольной оси), как в оригинале
+            scope.boxOp.change_rotation_x(scope.box, -theta, sticky, scope.on_box_changed);
+        }
+
         function on_x_scaled(ratio){
             
             ratio = {
@@ -1577,7 +1577,7 @@ class ProjectiveViewOps{
                                                     default_on_del,
                                                     this.isActive.bind(this));
         this.x_view_handle.on_pan = on_x_pan;
-        this.x_view_handle.disableMouseRotation();
+        this.x_view_handle.on_mouse_rotate = on_x_tilt;   // ручка мышью: наклон вбок, как в оригинале
 
     }  // end of constructor
 
