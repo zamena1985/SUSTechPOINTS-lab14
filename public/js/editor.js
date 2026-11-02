@@ -1,15 +1,15 @@
 import * as THREE from './lib/three.module.js';
 
-import {ViewManager} from "./view.js?v=202611021058";
-import {FastToolBox, FloatLabelManager} from "./floatlabel.js?v=202611021058";
+import {ViewManager} from "./view.js?v=202611021255";
+import {FastToolBox, FloatLabelManager} from "./floatlabel.js?v=202611021255";
 import {Mouse} from "./mouse.js";
-import {BoxEditor, BoxEditorManager} from "./box_editor.js?v=202611021058";
+import {BoxEditor, BoxEditorManager} from "./box_editor.js?v=202611021255";
 import {ImageContextManager} from "./image.js";
 import {globalObjectCategory} from "./obj_cfg.js";
 
 import {objIdManager} from "./obj_id_list.js";
 import {Header} from "./header.js";
-import {BoxOp} from './box_op.js?v=202611021058';
+import {BoxOp} from './box_op.js?v=202611021255';
 import {AutoAdjust} from "./auto-adjust.js";
 import {PlayControl} from "./play.js";
 import {reloadWorldList, saveWorldList} from "./save.js";
@@ -953,9 +953,11 @@ function Editor(editorUi, wrapperUi, editorCfg, data, name="editor"){
     this.render= function(){
 
         // renderAll рисует и когда главный вид "неактивен" (курсор над боковыми окошками);
-        // иначе новая коробка появлялась только после движения камеры
-        this.viewManager.mainView.renderAll();
-        this.boxEditor.boxView.render();
+        // иначе новая коробка появлялась только после движения камеры.
+        // Все окошки живут на одном холсте: главный вид при отрисовке очищает его целиком,
+        // поэтому после него надо перерисовать ВСЕ окошки, включая пакетный режим,
+        // иначе они остаются чёрными (замечание куратора: "чернеет при удалении/сдвиге").
+        this.viewManager.render();
 
         this.floatLabelManager.update_all_position();
         if (this.selected_box){
