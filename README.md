@@ -354,6 +354,7 @@ venv\Scripts\python tools\infra_draft.py --frames 76
 
 - `public/js/` — интерфейс. После правки любого файла здесь запустите `bump_version.bat`, иначе браузер возьмёт старые скрипты из кеша. Затем **F5**.
 - `tools/infra_transfer.py`, `tools/infra_check.py`, `tools/infra_draft.py` — инструменты разметки, параметры смотрите через `--help`.
+- `tools/fill_shift.py` — заполнить соседние кадры серии по размеченному кадру сдвигом облака; `tools/merge_boxes.py` — объединить несколько коробок одного кадра в одну (опора эстакады).
 - `public/js/obj_cfg.js` — список классов и их цвета.
 - `server.conf` — порт и каталоги сервера.
 - `algos/pre_annotate.py` — авто-поворот: нейросеть, если TensorFlow установлен, иначе геометрия точек. Переменная окружения `SUSTECH_NO_TF=1` отключает нейросеть принудительно.

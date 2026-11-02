@@ -28,3 +28,4 @@ restore_original.bat
 
 # сборки архивов для релизов
 dist/
+server_error.log
