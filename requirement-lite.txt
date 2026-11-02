@@ -1,0 +1,9 @@
+# Облегчённый набор без TensorFlow: сервер, шаблоны, фильтр Калмана для интерполяции.
+# Используется start.sh на Linux. Нейросеть по желанию: pip install tensorflow==2.12.0
+cherrypy
+cheroot != 8.4.4
+jinja2
+filterpy
+markdown
+numpy
+scipy

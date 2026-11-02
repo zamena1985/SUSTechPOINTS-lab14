@@ -7,3 +7,5 @@
 *.h5 binary
 *.bin binary
 *.pcd binary
+# скрипты для Linux всегда с LF
+*.sh text eol=lf
