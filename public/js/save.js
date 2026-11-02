@@ -1,7 +1,7 @@
 
 
 
-import { Editor } from "./editor.js?v=202610231733";
+import { Editor } from "./editor.js?v=202611021058";
 import { checkScene } from "./error_check.js";
 import {logger} from "./log.js"
 

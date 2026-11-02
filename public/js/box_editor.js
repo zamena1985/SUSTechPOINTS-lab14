@@ -1,10 +1,10 @@
 
-import {ProjectiveViewOps}  from "./side_view_op.js?v=202610231733"
+import {ProjectiveViewOps}  from "./side_view_op.js?v=202611021058"
 import {BoxImageContext} from "./image.js";
 import {saveWorldList, reloadWorldList} from "./save.js"
 import {objIdManager} from "./obj_id_list.js"
 import { globalKeyDownManager } from "./keydown_manager.js";
-import{ml} from "./ml.js?v=202610231733";
+import{ml} from "./ml.js?v=202611021058";
 import { BooleanKeyframeTrack } from "./lib/three.module.js";
 import { checkScene } from "./error_check.js";
 import { logger } from "./log.js";

@@ -284,11 +284,13 @@ var ml = {
     //     xhr.send(JSON.stringify({"points": data}));
     // },
 
-    predict_rotation: function(data){
+    predict_rotation: function(data, hintYaw){
         const req = new Request("/predict_rotation");
+        let body = {"points": data};
+        if (typeof hintYaw === "number" && isFinite(hintYaw)) body.hint = hintYaw;   // ожидаемый угол (интерполяция)
         let init = {
             method: 'POST',
-            body: JSON.stringify({"points": data})
+            body: JSON.stringify(body)
           };
         // we defined the xhr
         console.log("start predict rotatoin.", data.length, 'points')

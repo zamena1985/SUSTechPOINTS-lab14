@@ -143,7 +143,8 @@ class Root(object):
       
       data = json.loads(rawbody)
       
-      return {"angle": pre_annotate.predict_yaw(data["points"])}
+      hint = data.get("hint")   # ожидаемый угол из интерполяции (см. algos/pre_annotate.predict_yaw)
+      return {"angle": pre_annotate.predict_yaw(data["points"], hint if isinstance(hint, (int, float)) else None)}
       #return {}
 
     

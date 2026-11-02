@@ -6,7 +6,7 @@ import {
 	Vector3
 } from "./lib/three.module.js";
 
-import{ml} from "./ml.js?v=202610231733";
+import{ml} from "./ml.js?v=202611021058";
 import {dotproduct, transpose, matmul, euler_angle_to_rotate_matrix_3by3} from "./util.js"
 
 
@@ -100,7 +100,7 @@ function BoxOp(){
         }
 
 
-    this.auto_rotate_xyz= async function(box, callback, apply_mask, on_box_changed, noscaling, rotate_method){
+    this.auto_rotate_xyz= async function(box, callback, apply_mask, on_box_changed, noscaling, rotate_method, hintYaw){
 
         let orgBox = box;
         box = {
@@ -290,7 +290,7 @@ function BoxOp(){
                 return p[2] > - box.scale.z/2 + 0.3;
             })
             
-            let retBox = await ml.predict_rotation(points)
+            let retBox = await ml.predict_rotation(points, hintYaw)
              .then(applyRotation)
              .then(postProc);
 
@@ -821,7 +821,9 @@ function BoxOp(){
                 rotateThis = "dontrotate";
             }
             
-            let adjustedBox =  await this.auto_rotate_xyz(tempBox, null, null, null, true, rotateThis);
+            // подсказка: угол из интерполяции между размеченными кадрами; без нейросети геометрия
+            // выбирает по нему сторону (иначе редкие точки давали поворот на 90 градусов)
+            let adjustedBox =  await this.auto_rotate_xyz(tempBox, null, null, null, true, rotateThis, tempBox.rotation.z);
             return world.annotation.ann_to_vector_global(adjustedBox);
         };
 

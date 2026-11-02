@@ -89,9 +89,30 @@ def yaw_from_points(points):
     return float(math.atan2(math.sin(yaw), math.cos(yaw)))
 
 
-def predict_yaw(points):
+HINT_MIN_PTS = 30   # меньше точек - геометрии верить нельзя, оставляем подсказанный угол
+
+
+def pick_near_hint(yaw, hint):
+    """Геометрия даёт направление с точностью до 90 градусов (длинная/короткая сторона, перед/зад).
+    При интерполяции известен ожидаемый угол: берём из четырёх кандидатов ближайший к нему."""
+    best = None
+    for k in range(4):
+        c = yaw + k * math.pi / 2
+        d = abs(math.atan2(math.sin(c - hint), math.cos(c - hint)))
+        if best is None or d < best[0]:
+            best = (d, c)
+    return float(math.atan2(math.sin(best[1]), math.cos(best[1])))
+
+
+def predict_yaw(points, hint=None):
+    """hint - ожидаемый угол (рад), например из интерполяции между размеченными кадрами.
+    Нейросеть подсказку не использует; геометрический запасной путь выбирает по ней сторону."""
     points = np.array(points, dtype=np.float32).reshape((-1, 3))
     if rotation_model is None:
+        if hint is not None:
+            if points.shape[0] < HINT_MIN_PTS:
+                return [0, 0, float(hint)]
+            return [0, 0, pick_near_hint(yaw_from_points(points), float(hint))]
         return [0, 0, yaw_from_points(points)]
     input_data = np.stack([x for x in map(lambda x: sample_one_obj(points, NUM_POINT), range(RESAMPLE_NUM))], axis=0)
     pred_val = rotation_model.predict(input_data, verbose=0)
